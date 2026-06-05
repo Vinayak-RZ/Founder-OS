@@ -22,6 +22,15 @@ async def classify_intent(message: str) -> dict:
         return {"intent": "get_followups", "entities": {}, "confidence": 0.9}
     if "pipeline" in m or "how is outreach" in m:
         return {"intent": "pipeline_status", "entities": {}, "confidence": 0.9}
+    # Lead generation: find people/emails/phone numbers to contact.
+    _lead_triggers = (
+        "find contact", "find me contact", "find contacts", "get me contact",
+        "find lead", "find leads", "get leads", "get me leads", "generate lead",
+        "decision maker", "contact details", "contact info", "contact number",
+        "phone number", "email of", "emails of", "their email", "reach out to",
+    )
+    if any(t in m for t in _lead_triggers):
+        return {"intent": "find_contacts", "entities": {}, "confidence": 0.9, "raw_message": message}
 
     # LLM classification for everything else
     messages = [

@@ -9,6 +9,7 @@ from agents.crm_agent import (
 )
 from agents.report_agent import daily_briefing
 from agents.ingest_agent import ingest
+from agents.lead_agent import find_leads
 from memory.sql_store import add_task, get_pending_tasks
 from memory.vector_store import add as vec_add
 from llm.router import complete
@@ -20,9 +21,9 @@ import json
 # Intents that are explicit commands — handled directly. Everything else flows
 # through the auto-ingest path so it gets understood, classified, and stored.
 COMMAND_INTENTS = {
-    "research_company", "draft_outreach", "add_contact", "update_contact",
-    "get_followups", "pipeline_status", "search_memory", "add_task",
-    "get_tasks", "daily_report",
+    "research_company", "find_contacts", "draft_outreach", "add_contact",
+    "update_contact", "get_followups", "pipeline_status", "search_memory",
+    "add_task", "get_tasks", "daily_report",
 }
 
 
@@ -102,6 +103,21 @@ async def process_message(message: str, image_context: str = "") -> str:
             if s.get("outreach_angle"):
                 lines.append(f"\n💡 *Outreach angle:* {s['outreach_angle']}")
             return "\n".join(lines)
+
+        # ── FIND CONTACTS / LEAD GEN ──────────────────────────────────────────
+        elif intent == "find_contacts":
+            company = entities.get("company") or _extract_after(
+                message, ["leads at", "contacts at", "contacts for", "leads for",
+                          "people at", "at", "from", "for"])
+            company = _clean_company(company)
+            if not company:
+                return ("Which company should I find leads at? Try: "
+                        "*find contacts at HDFC Ergo* or *get me leads at Acme, "
+                        "head of sales*")
+            role = entities.get("role")
+            await message_status(f"🕵️ Finding leads at {company}...")
+            result = await find_leads(company, role=role)
+            return truncate(_format_leads(result))
 
         # ── DRAFT OUTREACH ────────────────────────────────────────────────────
         elif intent == "draft_outreach":
@@ -243,6 +259,60 @@ Use Telegram markdown formatting (* for bold, _ for italic).
     response = await complete(messages, task_type="general")
     vec_add("conversations", response, metadata={"role": "assistant"})
     return truncate(response)
+
+def _clean_company(text: str) -> str:
+    """Trim trailing lead-gen filler words from an extracted company name."""
+    text = (text or "").strip(" .?,")
+    drop = {"email", "emails", "contact", "contacts", "details", "info",
+            "phone", "number", "numbers", "linkedin", "leads", "lead",
+            "please", "now", "asap"}
+    words = text.split()
+    while words and words[-1].lower() in drop:
+        words.pop()
+    return " ".join(words).strip()
+
+
+def _format_leads(r: dict) -> str:
+    company = r.get("company", "")
+    lines = [f"*Leads — {company}*"]
+    if r.get("domain"):
+        mx = r.get("domain_accepts_mail")
+        mx_note = " ✅" if mx else (" ⚠️ no mail server" if mx is False else "")
+        lines.append(f"🌐 Domain: {r['domain']}{mx_note}")
+    lines.append("")
+
+    company_emails = r.get("company_emails", [])
+    company_phones = r.get("company_phones", [])
+    if company_emails:
+        lines.append("*Company emails (verified from site):*")
+        for e in company_emails[:8]:
+            lines.append(f"  • {e}")
+    if company_phones:
+        lines.append("*Company phones (from site):*")
+        for p in company_phones[:5]:
+            lines.append(f"  • {p}")
+    if company_emails or company_phones:
+        lines.append("")
+
+    leads = r.get("leads", [])
+    if leads:
+        lines.append(f"*People ({len(leads)}):*")
+        for L in leads:
+            lines.append(f"\n👤 *{L.get('name','')}* — {L.get('role','') or '?'}")
+            if L.get("email"):
+                lines.append(f"   ✉️ {L['email']}  _({L.get('email_confidence','')})_")
+            if L.get("email_guesses") and L.get("email_confidence") != "verified (found online)":
+                lines.append(f"   ↳ other guesses: {', '.join(L['email_guesses'][1:3])}")
+            if L.get("linkedin"):
+                lines.append(f"   🔗 {L['linkedin']}")
+    elif not (company_emails or company_phones):
+        lines.append("Couldn't find public contacts. Try giving me the company "
+                     "website, or a specific person's name + company.")
+
+    lines.append("\n_Saved to your CRM. Say_ *draft email to [name]* _to reach out._")
+    lines.append("_Note: 'best guess' emails are pattern-based — verify before sending._")
+    return "\n".join(lines)
+
 
 def _extract_after(text: str, keywords: list) -> str:
     text_lower = text.lower()

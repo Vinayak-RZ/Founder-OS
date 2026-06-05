@@ -17,6 +17,7 @@ async def start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         "👋 *Founder OS online.*\n\n"
         "I'm your personal executive assistant. Try:\n"
         "• `research [company name]`\n"
+        "• `find contacts at [company]` — emails + phone numbers (lead gen)\n"
         "• `draft email to [person] at [company]`\n"
         "• `add [name] from [company] to CRM`\n"
         "• `who do I need to follow up with`\n"

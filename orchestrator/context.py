@@ -1,10 +1,20 @@
-from memory.vector_store import search_all
+from memory.vector_store import search_all, get_recent
 from memory.sql_store import search_contacts, search_companies, get_recent_outreach
 import json
 
 async def build_context(message: str, intent: str, entities: dict) -> str:
     """Build a rich context string to inject into LLM prompts."""
     sections = []
+
+    # Short-term memory: the last few conversation turns (chronological).
+    recent_turns = get_recent("conversations", limit=6)
+    if recent_turns:
+        recent_turns = list(reversed(recent_turns))  # oldest -> newest
+        turn_lines = []
+        for t in recent_turns:
+            role = t.get("metadata", {}).get("role", "?")
+            turn_lines.append(f"- {role}: {t['text'][:160]}")
+        sections.append("RECENT CONVERSATION:\n" + "\n".join(turn_lines))
 
     # Semantic memory search
     memory_results = search_all(message, n_results=4)
