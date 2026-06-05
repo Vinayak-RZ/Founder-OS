@@ -6,7 +6,10 @@ import uuid
 
 os.makedirs("./data/chroma", exist_ok=True)
 
-client = chromadb.PersistentClient(path="./data/chroma")
+client = chromadb.PersistentClient(
+    path="./data/chroma",
+    settings=Settings(anonymized_telemetry=False),
+)
 
 COLLECTIONS = ["conversations", "research", "notes", "outreach"]
 

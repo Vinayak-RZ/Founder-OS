@@ -149,9 +149,9 @@ def log_outreach(contact_id: int, channel: str, direction: str,
                  subject: str = None, body: str = None, status: str = "sent") -> int:
     conn = get_conn()
     c = conn.cursor()
-    c.execute("""INSERT INTO outreach_log (contact_id, channel, direction, subject, body, status)
-                 VALUES (?, ?, ?, ?, ?, ?)""",
-              (contact_id, channel, direction, subject, body, status))
+    c.execute("""INSERT INTO outreach_log (contact_id, channel, direction, subject, body, status, sent_at)
+                 VALUES (?, ?, ?, ?, ?, ?, ?)""",
+              (contact_id, channel, direction, subject, body, status, datetime.now().isoformat()))
     conn.commit()
     log_id = c.lastrowid
     conn.close()

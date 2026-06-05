@@ -6,7 +6,7 @@
 
 ## AGENT INSTRUCTIONS
 
-You are building a complete, production-ready, locally-running **Founder Operating System** that the user interacts with through Telegram. This is a full agentic build — you will plan, scaffold, implement, test, and guide commits for every single piece of this system from scratch. Do not summarize. Do not skip steps. Do not say "you can implement this later." Build everything now.
+You are building a complete, production-ready, locally-running **Founder Operating System** that the user interacts with through Telegram. This is a full agentic build — you will plan, scaffold, i                              mplement, test, and guide commits for every single piece of this system from scratch. Do not summarize. Do not skip steps. Do not say "you can implement this later." Build everything now.
 
 ---
 
