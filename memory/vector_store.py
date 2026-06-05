@@ -1,8 +1,14 @@
-import chromadb
-from chromadb.config import Settings
 import os
 import time
 import uuid
+
+# ChromaDB 0.4.x can emit noisy PostHog telemetry errors on some dependency
+# combinations. Disable telemetry before importing chromadb so it never starts.
+os.environ.setdefault("ANONYMIZED_TELEMETRY", "False")
+os.environ.setdefault("CHROMA_TELEMETRY_IMPL", "chromadb.telemetry.product.null.NullTelemetry")
+
+import chromadb
+from chromadb.config import Settings
 
 os.makedirs("./data/chroma", exist_ok=True)
 
