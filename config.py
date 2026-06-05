@@ -14,6 +14,7 @@ class Config:
     gmail_app_password: str
     my_telegram_user_id: int
     serper_api_key: str
+    tavily_api_key: str
     my_name: str
     company_name: str
     my_role: str
@@ -50,6 +51,7 @@ def load_config() -> Config:
         gmail_app_password=os.getenv("GMAIL_APP_PASSWORD", ""),
         my_telegram_user_id=int(os.getenv("MY_TELEGRAM_USER_ID", "0")),
         serper_api_key=os.getenv("SERPER_API_KEY", ""),
+        tavily_api_key=os.getenv("TAVILY_API_KEY", ""),
         my_name=os.getenv("MY_NAME", "Founder"),
         company_name=os.getenv("MY_COMPANY_NAME", "My Company"),
         my_role=os.getenv("MY_ROLE", "Founder"),
