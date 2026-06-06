@@ -21,15 +21,27 @@ def _block_from_hits(hits: list) -> str:
 
 
 def retrieve_context(query: str):
-    """Return (skills_block, lessons_block, goals_block) for prompt injection."""
+    """Return (skills_block, lessons_block, goals_block) for prompt injection.
+
+    Uses hybrid (dense+sparse) retrieval when available, falling back to plain
+    vector search so this never hard-fails.
+    """
     try:
-        skills = vec_search("skills", query, n_results=3)
+        from memory.retrieval import hybrid_search
+        skills = hybrid_search(query, collections=["skills"], k=3)
     except Exception:
-        skills = []
+        try:
+            skills = vec_search("skills", query, n_results=3)
+        except Exception:
+            skills = []
     try:
-        lessons = vec_search("lessons", query, n_results=4)
+        from memory.retrieval import hybrid_search
+        lessons = hybrid_search(query, collections=["lessons"], k=4)
     except Exception:
-        lessons = []
+        try:
+            lessons = vec_search("lessons", query, n_results=4)
+        except Exception:
+            lessons = []
     goals = store.list_goals("active")[:6]
     goals_block = "\n".join(f"- [{g['id']}] {g['title']} ({g.get('detail','')})" for g in goals)
     return _block_from_hits(skills), _block_from_hits(lessons), goals_block

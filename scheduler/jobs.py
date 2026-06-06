@@ -117,6 +117,15 @@ def load_pending_reminders():
 
 # ── HEARTBEAT (proactivity) ───────────────────────────────────────────────────
 
+async def job_consolidate_memory():
+    logger.info("[Scheduler] Nightly memory consolidation")
+    try:
+        from memory.consolidation import consolidate
+        await consolidate()
+    except Exception as e:
+        logger.error(f"Memory consolidation failed: {e}")
+
+
 async def job_heartbeat():
     logger.info("[Scheduler] Heartbeat")
     from agent import core
@@ -145,6 +154,7 @@ def start_scheduler(app) -> AsyncIOScheduler:
 
     _scheduler.add_job(job_daily_briefing, CronTrigger(hour=8, minute=0), id="daily_briefing")
     _scheduler.add_job(job_followup_reminder, CronTrigger(hour=10, minute=0), id="followup_reminder")
+    _scheduler.add_job(job_consolidate_memory, CronTrigger(hour=3, minute=0), id="consolidate_memory")
 
     hours = max(1, int(getattr(config, "heartbeat_hours", 4) or 4))
     _scheduler.add_job(
@@ -153,5 +163,6 @@ def start_scheduler(app) -> AsyncIOScheduler:
 
     _scheduler.start()
     load_pending_reminders()
-    logger.info(f"[Scheduler] Started. Briefing 08:00, follow-ups 10:00, heartbeat every {hours}h (9-21).")
+    logger.info(f"[Scheduler] Started. Briefing 08:00, follow-ups 10:00, consolidation 03:00, "
+                f"heartbeat every {hours}h (9-21).")
     return _scheduler
