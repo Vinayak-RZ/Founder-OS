@@ -16,4 +16,10 @@ from agent.tools import (  # noqa: F401
     calendar_tools,
     social_tools,
     evolution_tools,
+    meta_tools,
+    optimizer_tools,
 )
+
+# Load any tools the agent authored for itself in past sessions.
+from agent import skills_factory as _sf  # noqa: E402
+_sf.load_generated()

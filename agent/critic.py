@@ -14,7 +14,7 @@ from llm.router import complete
 
 logger = logging.getLogger(__name__)
 
-_HIGH_STAKES = {"send_email", "x_post", "propose_code_change"}
+_HIGH_STAKES = {"send_email", "x_post", "propose_code_change", "create_tool"}
 
 
 async def verify_answer(goal: str, answer: str, work_summary: str = "") -> dict:
@@ -67,6 +67,8 @@ async def precheck_action(tool_name: str, args: dict) -> dict:
         payload = args.get("text", "")
     elif tool_name == "propose_code_change":
         payload = f"File: {args.get('file')}\n{args.get('change','')[:600]}"
+    elif tool_name == "create_tool":
+        payload = f"New tool {args.get('name')}: {args.get('description','')}\nCode:\n{args.get('body','')[:600]}"
 
     messages = [
         {"role": "system", "content":

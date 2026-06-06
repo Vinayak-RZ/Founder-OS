@@ -92,6 +92,16 @@ def init_agent_db():
             result TEXT,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
+
+        CREATE TABLE IF NOT EXISTS strategies (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            grp TEXT NOT NULL,                 -- decision family, e.g. 'email_subject_style'
+            variant TEXT NOT NULL,             -- the approach tried
+            trials INTEGER DEFAULT 0,
+            successes INTEGER DEFAULT 0,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(grp, variant)
+        );
         """
     )
     conn.commit()
@@ -340,6 +350,43 @@ def set_plan_status(plan_id: int, status: str):
     )
     conn.commit()
     conn.close()
+
+
+# ── STRATEGIES (A/B optimizer) ────────────────────────────────────────────────
+
+def record_strategy(grp: str, variant: str, success: bool):
+    conn = get_conn()
+    conn.execute(
+        """INSERT INTO strategies (grp, variant, trials, successes, updated_at)
+           VALUES (?, ?, 1, ?, ?)
+           ON CONFLICT(grp, variant) DO UPDATE SET
+             trials = trials + 1,
+             successes = successes + ?,
+             updated_at = ?""",
+        (grp, variant, 1 if success else 0, datetime.now().isoformat(),
+         1 if success else 0, datetime.now().isoformat()),
+    )
+    conn.commit()
+    conn.close()
+
+
+def strategy_leaderboard(grp: str) -> list:
+    conn = get_conn()
+    rows = conn.execute(
+        "SELECT * FROM strategies WHERE grp = ? ORDER BY (CAST(successes AS REAL)/MAX(trials,1)) DESC, trials DESC",
+        (grp,),
+    ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def all_strategies(limit: int = 20) -> list:
+    conn = get_conn()
+    rows = conn.execute(
+        "SELECT * FROM strategies ORDER BY trials DESC LIMIT ?", (limit,)
+    ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
 
 
 # ── ACTION LOG ────────────────────────────────────────────────────────────────

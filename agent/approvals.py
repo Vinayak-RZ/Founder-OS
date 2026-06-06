@@ -21,6 +21,9 @@ def _summarize(tool_name: str, args: dict) -> str:
         return f"Delete calendar event {args.get('event_id')}"
     if tool_name == "propose_code_change":
         return f"Record code-change proposal for {args.get('file')}"
+    if tool_name == "create_tool":
+        body = (args.get("body") or "")[:300]
+        return f"Create a NEW self-authored tool '{args.get('name')}':\n   {args.get('description','')}\n   --- code ---\n   {body}"
     return f"{tool_name}({json.dumps(args)[:160]})"
 
 
