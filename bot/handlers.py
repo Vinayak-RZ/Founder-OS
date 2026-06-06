@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import re
 
@@ -211,8 +212,8 @@ async def handle_voice(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         from integrations import transcribe
         if not transcribe.available():
             await update.message.reply_text(
-                "🎙 Voice transcription isn't installed. Run `pip install faster-whisper` "
-                "(and have ffmpeg available), or just type your message.")
+                "🎙 Voice transcription needs either `faster-whisper` installed (offline) "
+                "or an OPENAI_API_KEY set (cloud). Add one, or just type your message.")
             return
 
         import tempfile, os
@@ -223,7 +224,8 @@ async def handle_voice(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             tf.write(bytes(raw))
             tmp_path = tf.name
         try:
-            text = transcribe.transcribe_file(tmp_path)
+            # Run transcription off the event loop (it does blocking I/O / CPU work).
+            text = await asyncio.to_thread(transcribe.transcribe_file, tmp_path)
         finally:
             try:
                 os.remove(tmp_path)
