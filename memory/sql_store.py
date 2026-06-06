@@ -3,8 +3,10 @@ import os
 from datetime import datetime, timedelta
 from typing import Optional
 
-os.makedirs("./data", exist_ok=True)
-DB_PATH = "./data/founder_os.db"
+# DB path is env-overridable so tests (and alternate deployments) can point at an
+# isolated database instead of the live one.
+DB_PATH = os.getenv("FOUNDER_OS_DB", "./data/founder_os.db")
+os.makedirs(os.path.dirname(DB_PATH) or ".", exist_ok=True)
 
 def get_conn():
     conn = sqlite3.connect(DB_PATH)

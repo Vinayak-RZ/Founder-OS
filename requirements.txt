@@ -17,6 +17,9 @@ rank-bm25==0.2.2
 fpdf2==2.7.9
 gTTS==2.5.1
 
+# Dev / testing
+pytest==8.2.0
+
 # Optional: cross-encoder reranker for sharper recall (heavy, pulls torch).
 # Install only if you want it; retrieval works without it (RRF fusion).
 # sentence-transformers==2.7.0
