@@ -1,0 +1,12 @@
+services:
+  founder-os:
+    build: .
+    container_name: founder-os
+    env_file: .env
+    # Persist the agent's entire brain (DB + vector store + backups) on the host
+    # so it survives rebuilds. Mounting the host data/ keeps everything local.
+    volumes:
+      - ./data:/app/data
+    # Keep the cofounder running 24/7 so heartbeats, briefings, follow-ups,
+    # monitors and nightly backups actually fire.
+    restart: unless-stopped

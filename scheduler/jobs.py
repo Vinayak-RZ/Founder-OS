@@ -188,6 +188,17 @@ async def job_consolidate_memory():
         logger.error(f"Memory consolidation failed: {e}")
 
 
+async def job_backup():
+    logger.info("[Scheduler] Nightly backup")
+    try:
+        from agent import backup
+        res = backup.create_backup()
+        logger.info(f"[Scheduler] Backup OK: {res.get('path')} "
+                    f"({res.get('size_mb')} MB, {res.get('files')} files)")
+    except Exception as e:
+        logger.error(f"Backup failed: {e}")
+
+
 async def job_heartbeat():
     if _paused():
         return
@@ -219,6 +230,7 @@ def start_scheduler(app) -> AsyncIOScheduler:
     _scheduler.add_job(job_daily_briefing, CronTrigger(hour=8, minute=0), id="daily_briefing")
     _scheduler.add_job(job_followup_reminder, CronTrigger(hour=10, minute=0), id="followup_reminder")
     _scheduler.add_job(job_consolidate_memory, CronTrigger(hour=3, minute=0), id="consolidate_memory")
+    _scheduler.add_job(job_backup, CronTrigger(hour=2, minute=0), id="backup")
     _scheduler.add_job(job_check_monitors, CronTrigger(hour="9,15,20", minute=30), id="check_monitors")
     _scheduler.add_job(job_check_inbox, CronTrigger(hour="9-21", minute=15), id="check_inbox")
 
@@ -229,6 +241,6 @@ def start_scheduler(app) -> AsyncIOScheduler:
 
     _scheduler.start()
     load_pending_reminders()
-    logger.info(f"[Scheduler] Started. Briefing 08:00, follow-ups 10:00, consolidation 03:00, "
-                f"heartbeat every {hours}h (9-21).")
+    logger.info(f"[Scheduler] Started. Briefing 08:00, follow-ups 10:00, backup 02:00, "
+                f"consolidation 03:00, heartbeat every {hours}h (9-21).")
     return _scheduler
