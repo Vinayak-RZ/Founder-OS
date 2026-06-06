@@ -15,7 +15,7 @@ sales"), etc.
 import json
 import logging
 
-from agents.research_agent import research_company
+from specialists.research_agent import research_company
 from memory.sql_store import add_contact, search_contacts
 from tools import contact_finder as cf
 from tools.web_search import search

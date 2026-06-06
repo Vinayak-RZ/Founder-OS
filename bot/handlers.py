@@ -1,57 +1,83 @@
 import logging
+import re
+
 from telegram import Update
 from telegram.constants import ChatAction
 from telegram.ext import ContextTypes, MessageHandler, CommandHandler, filters
+
 from bot.middleware import is_authorized
 from bot.formatters import split_long_message
-from orchestrator.response_builder import process_message
+from agent import core, approvals
 from llm.vision import describe_image
 
 logger = logging.getLogger(__name__)
+
+_APPROVE_RE = re.compile(r"^\s*(approve|reject)\s+#?(\d+)\s*$", re.IGNORECASE)
+
 
 async def start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if not is_authorized(update.effective_user.id):
         await update.message.reply_text("Unauthorized.")
         return
     await update.message.reply_text(
-        "👋 *Founder OS online.*\n\n"
-        "I'm your personal executive assistant. Try:\n"
-        "• `research [company name]`\n"
-        "• `find contacts at [company]` — emails + phone numbers (lead gen)\n"
-        "• `draft email to [person] at [company]`\n"
-        "• `add [name] from [company] to CRM`\n"
-        "• `who do I need to follow up with`\n"
-        "• `show pipeline`\n"
-        "• `daily report`\n"
-        "• `note: [anything]`\n\n"
-        "📥 *Just send me anything* — text, a link, or an image. I'll read it, "
-        "understand it, classify it (competitor, research, contact, idea…), and "
-        "file it into memory automatically.",
-        parse_mode="Markdown"
+        "🤖 *Founder OS — autonomous agent online.*\n\n"
+        "I'm an agentic, self-evolving chief-of-staff. Just talk to me naturally — "
+        "I decide which tools to use and chain them to get things done:\n"
+        "• Research, lead-gen, CRM, outreach drafting\n"
+        "• Reminders (\"remind me to call Asha at 5pm\")\n"
+        "• Google Calendar (once connected)\n"
+        "• Tasks, goals, daily briefings\n"
+        "• Drafting X / LinkedIn posts\n\n"
+        "I learn from how you work and improve over time. Risky actions (sending email, "
+        "posting) I'll queue for your `approve <id>`.\n\n"
+        "Try: `set a goal to book 5 demos this month`, or `remind me in 2 hours to review the deck`.",
+        parse_mode="Markdown",
     )
+
+
+async def approvals_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    if not is_authorized(update.effective_user.id):
+        return
+    await update.message.reply_text(approvals.pending_text(), parse_mode="Markdown")
+
+
+def _status_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    async def on_status(_text: str):
+        try:
+            await ctx.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
+        except Exception:
+            pass
+    return on_status
+
 
 async def handle_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if not is_authorized(update.effective_user.id):
-        logger.warning(f"Unauthorized access attempt from user_id={update.effective_user.id}")
+        logger.warning(f"Unauthorized access from user_id={update.effective_user.id}")
         return
 
-    user_message = update.message.text
+    user_message = update.message.text or ""
     logger.info(f"Received: {user_message[:80]}")
 
-    # Show typing indicator
-    await ctx.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
+    # Approval shortcuts handled directly (no LLM needed).
+    m = _APPROVE_RE.match(user_message)
+    if m:
+        action, aid = m.group(1).lower(), int(m.group(2))
+        await ctx.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
+        reply = await approvals.approve(aid) if action == "approve" else approvals.reject(aid)
+        await _send_reply(update, reply)
+        return
 
+    await ctx.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
     try:
-        response = await process_message(user_message)
+        response = await core.run(user_message, on_status=_status_callback(update, ctx))
         await _send_reply(update, response)
     except Exception as e:
         logger.error(f"Handler error: {e}")
         await update.message.reply_text(f"⚠️ Error: {str(e)[:200]}")
 
+
 async def handle_media(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    """Handle photos and documents: read images with vision, then ingest."""
     if not is_authorized(update.effective_user.id):
-        logger.warning(f"Unauthorized media from user_id={update.effective_user.id}")
         return
 
     msg = update.message
@@ -59,13 +85,9 @@ async def handle_media(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     await ctx.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
 
     try:
-        file_id = None
-        mime = "image/jpeg"
-        is_image = True
-        filename = ""
-
+        file_id, mime, is_image, filename = None, "image/jpeg", True, ""
         if msg.photo:
-            file_id = msg.photo[-1].file_id  # largest size
+            file_id = msg.photo[-1].file_id
         elif msg.document:
             file_id = msg.document.file_id
             mime = msg.document.mime_type or "application/octet-stream"
@@ -79,30 +101,30 @@ async def handle_media(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         if is_image:
             tg_file = await ctx.bot.get_file(file_id)
             raw = await tg_file.download_as_bytearray()
-            logger.info(f"Image received ({len(raw)} bytes), running vision...")
             description = await describe_image(bytes(raw), caption=caption, mime=mime)
-            response = await process_message(caption or "(image attached)", image_context=description)
+            response = await core.run(caption or "(image attached)", image_context=description,
+                                      on_status=_status_callback(update, ctx))
         else:
-            # Non-image document: capture what we know so it's still filed.
-            text = (f"Received a document '{filename}' (type: {mime}). "
-                    f"Caption: {caption or '(none)'}")
-            response = await process_message(text)
+            text = f"Received a document '{filename}' (type: {mime}). Caption: {caption or '(none)'}"
+            response = await core.run(text, on_status=_status_callback(update, ctx))
 
         await _send_reply(update, response)
     except Exception as e:
         logger.error(f"Media handler error: {e}")
         await update.message.reply_text(f"⚠️ Couldn't process that attachment: {str(e)[:200]}")
 
+
 async def _send_reply(update: Update, response: str):
     for chunk in split_long_message(response):
         try:
             await update.message.reply_text(chunk, parse_mode="Markdown")
         except Exception:
-            # If markdown parsing fails, fall back to plain text.
             await update.message.reply_text(chunk)
+
 
 def register_handlers(app):
     app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("approvals", approvals_cmd))
     app.add_handler(MessageHandler(filters.PHOTO, handle_media))
     app.add_handler(MessageHandler(filters.Document.ALL, handle_media))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))

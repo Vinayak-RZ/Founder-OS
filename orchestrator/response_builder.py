@@ -1,16 +1,16 @@
 from orchestrator.router import classify_intent
 from orchestrator.context import build_context
-from agents.research_agent import research_company
-from agents.outreach_agent import draft_email, draft_linkedin_message
-from agents.memory_agent import save as mem_save, recall
-from agents.crm_agent import (
+from specialists.research_agent import research_company
+from specialists.outreach_agent import draft_email, draft_linkedin_message
+from specialists.memory_agent import save as mem_save, recall
+from specialists.crm_agent import (
     add as crm_add, update_status, get_followups,
     pipeline, search as crm_search, set_followup
 )
-from agents.report_agent import daily_briefing
-from agents.ingest_agent import ingest
-from agents.lead_agent import find_leads, parse_lead_request
-from agents.reasoning_agent import deep_reason
+from specialists.report_agent import daily_briefing
+from specialists.ingest_agent import ingest
+from specialists.lead_agent import find_leads, parse_lead_request
+from specialists.reasoning_agent import deep_reason
 from memory.sql_store import add_task, get_pending_tasks
 from memory.vector_store import add as vec_add
 from llm.router import complete

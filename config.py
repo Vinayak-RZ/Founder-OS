@@ -19,6 +19,18 @@ class Config:
     company_name: str
     my_role: str
     my_one_liner: str
+    # Autonomy / agent
+    auto_approve: bool
+    heartbeat_hours: int
+    # Google Calendar (optional)
+    google_credentials_path: str
+    google_token_path: str
+    # X / Twitter (optional)
+    x_api_key: str
+    x_api_secret: str
+    x_access_token: str
+    x_access_token_secret: str
+    x_bearer_token: str
 
 def load_config() -> Config:
     missing = []
@@ -56,6 +68,15 @@ def load_config() -> Config:
         company_name=os.getenv("MY_COMPANY_NAME", "My Company"),
         my_role=os.getenv("MY_ROLE", "Founder"),
         my_one_liner=os.getenv("MY_ONE_LINER", ""),
+        auto_approve=os.getenv("AUTO_APPROVE", "false").strip().lower() in ("1", "true", "yes", "on"),
+        heartbeat_hours=int(os.getenv("HEARTBEAT_HOURS", "4") or "4"),
+        google_credentials_path=os.getenv("GOOGLE_CREDENTIALS_PATH", "./data/google_credentials.json"),
+        google_token_path=os.getenv("GOOGLE_TOKEN_PATH", "./data/google_token.json"),
+        x_api_key=os.getenv("X_API_KEY", ""),
+        x_api_secret=os.getenv("X_API_SECRET", ""),
+        x_access_token=os.getenv("X_ACCESS_TOKEN", ""),
+        x_access_token_secret=os.getenv("X_ACCESS_TOKEN_SECRET", ""),
+        x_bearer_token=os.getenv("X_BEARER_TOKEN", ""),
     )
 
 config = load_config()

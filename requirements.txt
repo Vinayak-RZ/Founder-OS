@@ -13,3 +13,11 @@ dnspython==2.6.1
 APScheduler==3.10.4
 aiosqlite==0.20.0
 lxml==5.1.0
+
+# Optional integrations (safe to skip; imported lazily):
+# Google Calendar
+google-api-python-client==2.122.0
+google-auth==2.29.0
+google-auth-oauthlib==1.2.0
+# X / Twitter
+tweepy==4.14.0
