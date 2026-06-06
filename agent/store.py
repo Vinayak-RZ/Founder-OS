@@ -119,6 +119,15 @@ def init_agent_db():
             completion_tokens INTEGER DEFAULT 0,
             cost_usd REAL DEFAULT 0
         );
+
+        CREATE TABLE IF NOT EXISTS finance_log (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            cash REAL,                         -- cash in the bank
+            monthly_burn REAL,                 -- gross monthly spend
+            mrr REAL DEFAULT 0,                -- monthly recurring revenue
+            note TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
         """
     )
     # Migrate older usage_daily rows that predate token/cost columns.
@@ -482,6 +491,38 @@ def usage_today() -> dict:
     row = conn.execute("SELECT * FROM usage_daily WHERE day = ?", (day,)).fetchone()
     conn.close()
     return dict(row) if row else {"day": day, "llm_calls": 0, "tool_calls": 0}
+
+
+# ── FINANCE ───────────────────────────────────────────────────────────────────
+
+def set_financials(cash: float, monthly_burn: float, mrr: float = 0.0, note: str = "") -> int:
+    conn = get_conn()
+    cur = conn.execute(
+        "INSERT INTO finance_log (cash, monthly_burn, mrr, note) VALUES (?, ?, ?, ?)",
+        (cash, monthly_burn, mrr, note),
+    )
+    conn.commit()
+    fid = cur.lastrowid
+    conn.close()
+    return fid
+
+
+def latest_financials() -> Optional[dict]:
+    conn = get_conn()
+    row = conn.execute(
+        "SELECT * FROM finance_log ORDER BY created_at DESC, id DESC LIMIT 1"
+    ).fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+
+def finance_history(limit: int = 12) -> list:
+    conn = get_conn()
+    rows = conn.execute(
+        "SELECT * FROM finance_log ORDER BY created_at DESC, id DESC LIMIT ?", (limit,)
+    ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
 
 
 # ── ACTION LOG ────────────────────────────────────────────────────────────────

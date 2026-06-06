@@ -12,7 +12,7 @@ import json
 import os
 from datetime import datetime
 
-from agent import store, budget
+from agent import store, budget, finance
 from memory.sql_store import get_all_contacts, get_contacts_needing_followup, get_pending_tasks
 
 STATE_PATH = "./data/world_state/latest.json"
@@ -57,6 +57,7 @@ def build_snapshot() -> dict:
              "rate": round(s.get("successes", 0) / max(s.get("trials", 1), 1), 2)}
             for s in strategies
         ],
+        "finance": finance.summary(),
         "usage_today": usage,
     }
 
@@ -86,6 +87,18 @@ def snapshot_block(max_chars: int = 1200) -> str:
             f"#{p['id']} {p['goal'][:40]} ({p['progress']})" for p in s["projects_open"][:3]))
     if s["approvals_pending"]:
         lines.append(f"⚠ {s['approvals_pending']} action(s) waiting for your approval.")
+    fin = s.get("finance") or {}
+    if fin.get("set"):
+        if fin.get("runway_months") is not None:
+            lines.append(f"Runway: ~{fin['runway_months']} months "
+                         f"(cash ${fin.get('cash', 0):,.0f}, net burn ${fin.get('net_burn', 0):,.0f}/mo) "
+                         f"[{fin.get('status')}]")
+        else:
+            lines.append(f"Finance: {fin.get('runway', 'cash-flow positive')} "
+                         f"(cash ${fin.get('cash', 0):,.0f})")
+        warn = finance.warning_line()
+        if warn:
+            lines.append(warn)
     u = s.get("usage_today") or {}
     lines.append(f"Today: {u.get('llm_calls', 0)} LLM calls, est ${u.get('est_cost_usd', 0)}")
     text = "\n".join(lines)
