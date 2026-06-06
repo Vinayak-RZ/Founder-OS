@@ -15,7 +15,7 @@
 > looks after your goals — all behind a human approval gate for anything risky.
 
 Founder OS is not a chatbot. It is an **autonomous agent**: you tell it an outcome, and
-it decides which of its **69 tools** to call, chains them, verifies its own work, and
+it decides which of its **72 tools** to call, chains them, verifies its own work, and
 gets things done — then quietly improves itself for next time.
 
 ---
@@ -42,7 +42,7 @@ gets things done — then quietly improves itself for next time.
 5. [Quickstart & setup](#5-quickstart--setup)
 6. [Configuration reference (.env)](#6-configuration-reference-env)
 7. [The agentic core in depth](#7-the-agentic-core-in-depth)
-8. [The complete tool catalog (69 tools)](#8-the-complete-tool-catalog-69-tools)
+8. [The complete tool catalog (72 tools)](#8-the-complete-tool-catalog-72-tools)
 9. [The memory brain](#9-the-memory-brain)
 10. [Self-evolution](#10-self-evolution)
 11. [Multi-agent orchestration](#11-multi-agent-orchestration)
@@ -164,7 +164,7 @@ flowchart TD
     policy --> approvals["Approval Gate (agent/approvals.py)"]
     policy --> registry["Tool + Skill Registry (agent/registry.py)"]
 
-    registry --> tools["69 Tools (agent/tools/*)"]
+    registry --> tools["72 Tools (agent/tools/*)"]
     loop --> subagents["Specialist Sub-agents (agent/subagent.py)"]
 
     tools --> brain[("Memory Brain")]
@@ -202,7 +202,7 @@ flowchart LR
         EVO["Self-evolution"]
     end
     subgraph Capabilities
-        REG["Tool Registry (69)"]
+        REG["Tool Registry (72)"]
         SKILLS["Self-authored tools"]
         OPT["Strategy optimizer"]
     end
@@ -548,13 +548,13 @@ manual and re-injected forever after.
 
 ---
 
-## 8. The complete tool catalog (69 tools)
+## 8. The complete tool catalog (72 tools)
 
 Tools are grouped by `category`. **🔒 = approval-gated** (won't run until you approve,
 unless `AUTONOMY_LEVEL=autonomous` / `AUTO_APPROVE=true`). Sub-agents receive only the
 categories relevant to their role (plus `memory`, which is always available).
 
-> Counts: **memory 8 · crm 6 · research 8 · outreach 3 · social 3 · reminders 3 · tasks 10 · goals 3 · calendar 3 · perception 6 · evolution 7 · meta 5 · orchestration 2 · finance 2 = 69**
+> Counts: **memory 8 · crm 6 · research 8 · outreach 3 · social 3 · reminders 3 · tasks 12 · goals 3 · calendar 3 · perception 6 · evolution 7 · meta 6 · orchestration 2 · finance 2 = 72**
 
 ### 8.1 `memory` (8)
 
@@ -617,7 +617,7 @@ categories relevant to their role (plus `memory`, which is always available).
 | `list_reminders` | — | List pending reminders. |
 | `cancel_reminder` | — | Cancel a pending reminder by id. |
 
-### 8.7 `tasks` (10 — includes durable projects + document generation)
+### 8.7 `tasks` (12 — includes durable projects, documents, charts, voice)
 
 | Tool | Approval | What it does |
 |---|:--:|---|
@@ -629,8 +629,10 @@ categories relevant to their role (plus `memory`, which is always available).
 | `project_status` | — | Full step-by-step status of one project, including step results. |
 | `advance_project` | — | Mark a project step done + checkpoint its result. |
 | `complete_project` | — | Mark an entire project finished. |
-| `generate_pdf` | — | Generate a **real PDF** (report/brief/one-pager/memo) from a title + body and **deliver it to you on Telegram** (falls back to `.txt` if `fpdf2` isn't installed). |
+| `generate_pdf` | — | Generate a **real PDF** (report/brief/one-pager/memo) from a title + body, optionally with an **embedded chart**, and **deliver it to you on Telegram** (falls back to `.txt` if `fpdf2` isn't installed). |
 | `create_document` | — | Create a `.md`/`.txt` document from content and deliver it to you on Telegram (for notes/specs/drafts). |
+| `generate_chart` | — | Render a **bar/line/pie chart** from labels + values and send it to you as an image. |
+| `send_voice_note` | — | **Speak a message aloud** and send it to you as a Telegram voice message (gTTS). |
 
 ### 8.8 `goals` (3)
 
@@ -671,7 +673,7 @@ categories relevant to their role (plus `memory`, which is always available).
 | `best_approach` | — | Ask which approach has worked best for a decision group. |
 | `propose_code_change` | 🔒 | File a proposal to change its **own source code** — recorded only, never auto-applied. |
 
-### 8.12 `meta` (5 — includes ops/backups)
+### 8.12 `meta` (6 — includes ops/backups + self-knowledge)
 
 | Tool | Approval | What it does |
 |---|:--:|---|
@@ -680,6 +682,7 @@ categories relevant to their role (plus `memory`, which is always available).
 | `recent_traces` | — | Inspect its own recent turns (which tools, how long) — self-diagnosis. |
 | `backup_now` | — | Back up the entire brain (DB + vector store + world state) into `data/backups/` immediately. |
 | `list_backups` | — | List existing backups (newest first) with size and timestamp. |
+| `about_self` | — | Accurately describe itself: builder (**Utso, @officiallyutso**), architecture, complexity, and full capabilities (computed live from the registry). |
 
 ### 8.13 `orchestration` (2)
 
@@ -1098,7 +1101,7 @@ FOUDNER_OS/
 │   ├── budget.py                # Spend cap, kill switch, cost tracking
 │   ├── trace.py                 # Per-turn flight recorder
 │   ├── store.py                 # Agent SQLite tables + accessors
-│   └── tools/                   # 69 tools across categories
+│   └── tools/                   # 72 tools across categories
 │       ├── __init__.py          # Imports all tool modules (registration) + loads generated
 │       ├── memory_tools.py      ├── brain_tools.py      ├── world_tools.py
 │       ├── crm_tools.py         ├── research_tools.py   ├── outreach_tools.py
@@ -1194,7 +1197,7 @@ you want; the agent picks the tools.
 ### 22.1 Fast local checks (no Telegram)
 
 ```bash
-# All modules import + all 69 tools register
+# All modules import + all 72 tools register
 python -c "import agent.tools, agent.core, scheduler.jobs, bot.handlers; from agent import registry; print('OK -', len(registry.all_tools()), 'tools')"
 
 # Behavior regression (side-effect-free)
@@ -1477,10 +1480,15 @@ Built incrementally, one commit per phase:
 | `feat: document RAG` | `documents` collection + `ingest_file`/`ingest_folder`/`ask_documents`/`list_ingested_documents` to ground answers in your own files. |
 | `feat: spoken voice replies` | gTTS-based audio replies to voice messages (`VOICE_REPLIES`, optional). |
 | `test: pytest regression suite` | 28 tests covering registry, approvals, finance, RAG, backups, PDF, skills factory; DB isolated via `FOUNDER_OS_DB`. |
+| `fix: send_voice_note tool` | Lets the agent send real Telegram voice messages on request (fixes it improvising a `.md` "voice note"). |
+| `feat: voice input out of the box` | Voice notes transcribed via OpenAI Whisper fallback when `faster-whisper` isn't installed; runs off the event loop. |
+| `feat: agent self-knowledge` | `about_self` tool + system-prompt origin line crediting builder **Utso (@officiallyutso)**. |
+| `feat: charts` | `generate_chart` (bar/line/pie) + chart embedding in PDFs via matplotlib. |
+| `feat: local web dashboard` | Flask control panel on `localhost:8787` (`DASHBOARD_*`) showing snapshot, runway, usage, approvals, traces. |
 
 ---
 
-## Appendix A — Full tool reference (all 69)
+## Appendix A — Full tool reference (all 72)
 
 Every tool below shows its **category**, whether it is **approval-gated**, its
 **parameters**, what it **returns**, an example **natural-language trigger** (what you'd
