@@ -15,6 +15,7 @@ from agent.loop import execute_loop
 import agent.tools  # noqa: F401 — importing registers every tool
 from agent.store import set_plan_status
 from memory.vector_store import add as vec_add, search_all
+from memory import world_model
 from config import config
 
 logger = logging.getLogger(__name__)
@@ -46,12 +47,19 @@ async def run(user_message: str, image_context: str = "", actor: str = "user",
     if image_context:
         enriched += f"\n\n[IMAGE CONTENT]\n{image_context}"
 
+    mem_ctx = _memory_context(user_message)
+    try:
+        world_ctx = world_model.snapshot_block()
+    except Exception:
+        world_ctx = ""
+    extra = "\n\n".join(x for x in [world_ctx, mem_ctx] if x)
+
     skills_block, lessons_block, goals_block = evolution.retrieve_context(user_message)
     system_prompt = identity.build_system_prompt(
         skills_block=skills_block,
         lessons_block=lessons_block,
         goals_block=goals_block,
-        extra_context=_memory_context(user_message),
+        extra_context=extra,
     )
 
     messages = [{"role": "system", "content": system_prompt}]

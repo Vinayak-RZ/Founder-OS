@@ -158,5 +158,5 @@ def build_system_prompt(skills_block: str = "", lessons_block: str = "",
     if lessons_block:
         parts.append("── RELEVANT LESSONS (things you learned) ──\n" + lessons_block)
     if extra_context:
-        parts.append("── CONTEXT FROM MEMORY ──\n" + extra_context)
+        parts.append("── FOUNDER WORLD STATE & MEMORY ──\n" + extra_context)
     return "\n\n".join(parts)

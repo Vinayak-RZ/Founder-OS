@@ -7,6 +7,7 @@ inside the tool body, so importing them here never crashes if a lib is missing.
 from agent.tools import (  # noqa: F401
     memory_tools,
     brain_tools,
+    world_tools,
     crm_tools,
     research_tools,
     task_tools,
