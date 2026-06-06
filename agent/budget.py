@@ -35,12 +35,35 @@ def note_call():
         pass
 
 
+# Rough per-1K-token USD costs (input, output). Free providers (Groq/Gemini free
+# tier) are ~0; OpenAI gpt-4o-mini priced for awareness. Adjust as needed.
+MODEL_COSTS = {
+    "gpt-4o-mini": (0.00015, 0.0006),
+    "gpt-4o": (0.0025, 0.01),
+    "llama-3.3-70b-versatile": (0.0, 0.0),
+}
+
+
+def note_tokens(model: str, prompt_tokens: int, completion_tokens: int):
+    inp, out = MODEL_COSTS.get(model, (0.0, 0.0))
+    cost = (prompt_tokens / 1000.0) * inp + (completion_tokens / 1000.0) * out
+    try:
+        store.incr_usage(prompt_tokens=prompt_tokens, completion_tokens=completion_tokens,
+                         cost_usd=round(cost, 6))
+    except Exception:
+        pass
+    return cost
+
+
 def status() -> dict:
     u = store.usage_today()
     cap = config.daily_llm_call_cap or 0
     return {
         "day": u.get("day"),
         "llm_calls": u.get("llm_calls", 0),
+        "prompt_tokens": u.get("prompt_tokens", 0),
+        "completion_tokens": u.get("completion_tokens", 0),
+        "est_cost_usd": round(u.get("cost_usd", 0) or 0, 4),
         "cap": cap or "unlimited",
         "paused": config.agent_paused,
         "autonomy_level": config.autonomy_level,

@@ -111,10 +111,25 @@ async def complete_project(project_id: int):
 @register(
     name="agent_status",
     description="Report the agent's current operating status: autonomy level, today's LLM "
-                "usage vs cap, and whether it's paused.",
+                "usage, estimated cost, and whether it's paused.",
     parameters={"type": "object", "properties": {}},
     category="meta",
 )
 async def agent_status():
     from agent import budget
     return budget.status()
+
+
+@register(
+    name="recent_traces",
+    description="Inspect the agent's own recent turns (flight recorder): which tools were "
+                "called and how long each turn took. Useful for self-diagnosis.",
+    parameters={
+        "type": "object",
+        "properties": {"limit": {"type": "integer"}},
+    },
+    category="meta",
+)
+async def recent_traces(limit: int = 5):
+    from agent import trace
+    return trace.recent(limit)

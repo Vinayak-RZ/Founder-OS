@@ -114,10 +114,21 @@ def init_agent_db():
         CREATE TABLE IF NOT EXISTS usage_daily (
             day TEXT PRIMARY KEY,              -- YYYY-MM-DD
             llm_calls INTEGER DEFAULT 0,
-            tool_calls INTEGER DEFAULT 0
+            tool_calls INTEGER DEFAULT 0,
+            prompt_tokens INTEGER DEFAULT 0,
+            completion_tokens INTEGER DEFAULT 0,
+            cost_usd REAL DEFAULT 0
         );
         """
     )
+    # Migrate older usage_daily rows that predate token/cost columns.
+    for col, decl in (("prompt_tokens", "INTEGER DEFAULT 0"),
+                      ("completion_tokens", "INTEGER DEFAULT 0"),
+                      ("cost_usd", "REAL DEFAULT 0")):
+        try:
+            conn.execute(f"ALTER TABLE usage_daily ADD COLUMN {col} {decl}")
+        except Exception:
+            pass
     conn.commit()
     conn.close()
 
@@ -447,14 +458,19 @@ def _today() -> str:
     return datetime.now().strftime("%Y-%m-%d")
 
 
-def incr_usage(llm: int = 0, tools: int = 0):
+def incr_usage(llm: int = 0, tools: int = 0, prompt_tokens: int = 0,
+               completion_tokens: int = 0, cost_usd: float = 0.0):
     day = _today()
     conn = get_conn()
     conn.execute(
-        """INSERT INTO usage_daily (day, llm_calls, tool_calls) VALUES (?, ?, ?)
+        """INSERT INTO usage_daily (day, llm_calls, tool_calls, prompt_tokens, completion_tokens, cost_usd)
+           VALUES (?, ?, ?, ?, ?, ?)
            ON CONFLICT(day) DO UPDATE SET
-             llm_calls = llm_calls + ?, tool_calls = tool_calls + ?""",
-        (day, llm, tools, llm, tools),
+             llm_calls = llm_calls + ?, tool_calls = tool_calls + ?,
+             prompt_tokens = prompt_tokens + ?, completion_tokens = completion_tokens + ?,
+             cost_usd = cost_usd + ?""",
+        (day, llm, tools, prompt_tokens, completion_tokens, cost_usd,
+         llm, tools, prompt_tokens, completion_tokens, cost_usd),
     )
     conn.commit()
     conn.close()

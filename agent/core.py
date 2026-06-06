@@ -10,7 +10,7 @@ import asyncio
 import json
 import logging
 
-from agent import registry, identity, evolution, planner, critic
+from agent import registry, identity, evolution, planner, critic, trace
 from agent.loop import execute_loop
 import agent.tools  # noqa: F401 — importing registers every tool
 from agent.store import set_plan_status
@@ -41,6 +41,7 @@ async def run(user_message: str, image_context: str = "", actor: str = "user",
     if config.agent_paused:
         return "⏸ I'm paused right now (AGENT_PAUSED is on). Turn it off to let me act again."
 
+    trace.start(actor, user_message)
     enriched = user_message
     if image_context:
         enriched += f"\n\n[IMAGE CONTENT]\n{image_context}"
@@ -70,6 +71,7 @@ async def run(user_message: str, image_context: str = "", actor: str = "user",
             plan_id = plan.get("plan_id")
             rendered = planner.render_plan(plan)
             if rendered:
+                trace.add("plan", {"plan_id": plan_id, "steps": len(plan.get("steps") or [])})
                 messages.append({"role": "system",
                                  "content": "WORKING PLAN (follow it, adapt if needed):\n" + rendered})
         except Exception as e:
@@ -111,6 +113,8 @@ async def run(user_message: str, image_context: str = "", actor: str = "user",
             set_plan_status(plan_id, "done")
         except Exception:
             pass
+
+    trace.finish(final_text)
 
     # Persist the turn and roll history.
     _history.append({"role": "user", "content": enriched})

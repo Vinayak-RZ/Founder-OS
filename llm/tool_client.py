@@ -101,6 +101,17 @@ async def complete_with_tools(messages: list, tools: list, max_tokens: int = 150
                 kwargs["tools"] = tools
                 kwargs["tool_choice"] = "auto"
             resp = await client.chat.completions.create(**kwargs)
+            try:
+                usage = getattr(resp, "usage", None)
+                if usage:
+                    from agent import budget, trace
+                    budget.note_tokens(model, getattr(usage, "prompt_tokens", 0) or 0,
+                                       getattr(usage, "completion_tokens", 0) or 0)
+                    trace.add("llm", {"provider": provider, "model": model,
+                                      "prompt_tokens": getattr(usage, "prompt_tokens", 0),
+                                      "completion_tokens": getattr(usage, "completion_tokens", 0)})
+            except Exception:
+                pass
             return _normalize(provider, resp.choices[0].message)
         except Exception as e:
             logger.warning(f"[tool_client] {provider} failed: {e}; trying next.")

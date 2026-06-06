@@ -7,7 +7,7 @@ whatever tool subset they're given.
 import json
 import logging
 
-from agent import registry, approvals, critic, policy, safety
+from agent import registry, approvals, critic, policy, safety, trace
 from agent.store import log_action
 from llm.tool_client import complete_with_tools
 
@@ -58,6 +58,8 @@ async def execute_loop(messages: list, schemas: list, actor: str = "agent",
                     result = await registry.call(name, args)
                     log_action(actor, name, args, json.dumps(result, default=str)[:1500])
                     result = safety.wrap_tool_result(name, result)
+
+                trace.add_tool_event(name, args, decision, result)
 
             messages.append({
                 "role": "tool",
