@@ -63,7 +63,9 @@ def _validate(source: str):
 def build_source(name: str, description: str, params: dict, body: str,
                  imports: str = "") -> str:
     name = _safe_name(name)
-    indented = "\n".join("    " + line for line in (body or "return {}").splitlines()) or "    return {}"
+    if not (body or "").strip():
+        raise ValueError("Generated tools require a non-empty Python function body.")
+    indented = "\n".join("    " + line for line in body.splitlines())
     src = _TEMPLATE.format(name=name, description=description, params=params or {"type": "object", "properties": {}},
                            body=indented, imports=imports.strip())
     _validate(src)

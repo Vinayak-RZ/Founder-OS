@@ -12,6 +12,16 @@ from agent import store, registry
 logger = logging.getLogger(__name__)
 
 
+def _missing_required(tool_name: str, args: dict) -> list:
+    """Return required tool arguments absent from the model-produced args."""
+    tool = registry.get(tool_name)
+    if tool is None:
+        return []
+    args = args or {}
+    required = (tool.parameters or {}).get("required", [])
+    return [name for name in required if args.get(name) in (None, "")]
+
+
 def _summarize(tool_name: str, args: dict) -> str:
     if tool_name == "send_email":
         return f"Send email to {args.get('to_address')} — subject: \"{args.get('subject','')}\""
@@ -28,6 +38,14 @@ def _summarize(tool_name: str, args: dict) -> str:
 
 
 def enqueue(tool_name: str, args: dict, risk_note: str = "") -> dict:
+    missing = _missing_required(tool_name, args)
+    if missing:
+        return {
+            "status": "invalid_approval",
+            "error": f"Cannot queue {tool_name}: missing required argument(s): {', '.join(missing)}.",
+            "message": f"I tried to prepare `{tool_name}`, but the tool call was incomplete "
+                       f"(missing: {', '.join(missing)}). Please ask me to generate it again.",
+        }
     summary = _summarize(tool_name, args)
     if risk_note:
         summary = f"{summary}\n   ⚠️ {risk_note}"
@@ -59,6 +77,11 @@ async def approve(approval_id: int) -> str:
     if appr["status"] != "pending":
         return f"Approval {approval_id} is already '{appr['status']}'."
     args = json.loads(appr["args_json"] or "{}")
+    missing = _missing_required(appr["tool_name"], args)
+    if missing:
+        msg = f"Approval {approval_id} is invalid: missing required argument(s): {', '.join(missing)}."
+        store.set_approval_status(approval_id, "failed", msg)
+        return f"⚠️ {msg}\n\nPlease ask me to recreate the action with the missing fields included."
     result = await registry.call(appr["tool_name"], args)
     ok = not (isinstance(result, dict) and (result.get("error") or result.get("success") is False))
     store.set_approval_status(approval_id, "executed" if ok else "failed", str(result)[:1000])
