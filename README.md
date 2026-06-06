@@ -464,11 +464,24 @@ All configuration is read in `config.py` into a typed `Config` dataclass. Only
 
 | Variable | Default | Description |
 |---|---|---|
+| `PUBLIC_ACCESS` | `false` | **Access switch.** `false` = only `MY_TELEGRAM_USER_ID` may use the bot. `true` = **anyone** who finds the bot can use it. See the warning below. |
 | `AUTO_APPROVE` | `false` | If true, risky tools run **without** asking. Leave false to keep the approval gate. |
 | `HEARTBEAT_HOURS` | `4` | How often the proactive heartbeat runs between 09:00–21:00. |
 | `AUTONOMY_LEVEL` | `balanced` | `cautious` (gate writes too), `balanced` (gate only risky), `autonomous` (no gate). |
 | `DAILY_LLM_CALL_CAP` | `0` | Daily LLM-call budget; `0` = unlimited. Protects against runaway loops. |
 | `AGENT_PAUSED` | `false` | **Kill switch** — when true the agent makes no calls and takes no actions. |
+
+> #### ⚠️ About `PUBLIC_ACCESS`
+> By default the bot is **single-user** — only your `MY_TELEGRAM_USER_ID` is served and every
+> other sender is silently ignored (`bot/middleware.py`). Flip `PUBLIC_ACCESS=true` to let
+> **anyone** who opens the bot talk to it — useful for a public demo or a shared team bot.
+>
+> Be aware that all users share the **same brain**: one memory, CRM, inbox, document store,
+> finances, and approval queue. A public user could read your data or trigger actions. If you
+> enable it, strongly prefer `AUTONOMY_LEVEL=cautious` (gate every write) and keep
+> `AUTO_APPROVE=false` so nothing is sent on your behalf without your tap. Note that proactive
+> messages (briefings, follow-ups, reply alerts, reminders) are still delivered **only** to your
+> `MY_TELEGRAM_USER_ID`. Flip it back to `false` anytime to make the bot private again.
 
 ### Local model (Ollama) & caching
 
@@ -1169,7 +1182,8 @@ FOUDNER_OS/
 ## 21. Telegram interface
 
 Only **your** `MY_TELEGRAM_USER_ID` is authorized (`bot/middleware.py`); everyone else is
-silently ignored.
+silently ignored — unless you set `PUBLIC_ACCESS=true`, which opens the bot to anyone (see the
+⚠️ note in the Configuration section).
 
 ### Commands
 
@@ -1332,7 +1346,7 @@ Append a scenario to `evals/scenarios.py` with `expect_any` / `forbid` tool list
 
 ## 25. Security & privacy
 
-- **Single authorized user.** Only your Telegram ID is served; all other senders are ignored.
+- **Single authorized user (default).** Only your Telegram ID is served; all other senders are ignored. Set `PUBLIC_ACCESS=true` to open the bot to everyone (shared brain — see the ⚠️ note under Configuration → Autonomy & safety).
 - **Local data.** Everything (CRM, memory, traces, state) lives on your machine in `data/`.
 - **Secrets stay in `.env`** (git-ignored). The agent is instructed never to reveal credentials, and injection defense resists attempts to exfiltrate them.
 - **Approval gate** on all irreversible/public actions; **autonomy level** lets you tighten further.
@@ -1487,6 +1501,7 @@ Built incrementally, one commit per phase:
 | `feat: charts` | `generate_chart` (bar/line/pie) + chart embedding in PDFs via matplotlib. |
 | `feat: local web dashboard` | Flask control panel on `localhost:8787` (`DASHBOARD_*`) showing snapshot, runway, usage, approvals, traces. |
 | `feat: email reply-tracking loop` | Auto-detects replies from CRM contacts (`seen_emails` dedupe), logs them, marks the contact **responded**, drafts a suggested reply, and surfaces it on Telegram with one-tap Approve/Reject (or auto-sends when autonomy is high) while keeping a 3-day follow-up scheduled; `check_replies_now` tool + repurposed inbox job. |
+| `feat: PUBLIC_ACCESS switch` | One env flag opens the bot from single-user to anyone (`bot/middleware.py`); default stays private. Proactive messages still go only to the owner. |
 
 ---
 

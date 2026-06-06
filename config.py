@@ -13,6 +13,7 @@ class Config:
     gmail_address: str
     gmail_app_password: str
     my_telegram_user_id: int
+    public_access: bool          # if true, ANY Telegram user can use the bot
     serper_api_key: str
     tavily_api_key: str
     my_name: str
@@ -75,6 +76,7 @@ def load_config() -> Config:
         gmail_address=os.getenv("GMAIL_ADDRESS", ""),
         gmail_app_password=os.getenv("GMAIL_APP_PASSWORD", ""),
         my_telegram_user_id=int(os.getenv("MY_TELEGRAM_USER_ID", "0")),
+        public_access=os.getenv("PUBLIC_ACCESS", "false").strip().lower() in ("1", "true", "yes", "on"),
         serper_api_key=os.getenv("SERPER_API_KEY", ""),
         tavily_api_key=os.getenv("TAVILY_API_KEY", ""),
         my_name=os.getenv("MY_NAME", "Founder"),
