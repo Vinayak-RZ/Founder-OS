@@ -15,7 +15,7 @@
 > looks after your goals — all behind a human approval gate for anything risky.
 
 Founder OS is not a chatbot. It is an **autonomous agent**: you tell it an outcome, and
-it decides which of its **59 tools** to call, chains them, verifies its own work, and
+it decides which of its **61 tools** to call, chains them, verifies its own work, and
 gets things done — then quietly improves itself for next time.
 
 ---
@@ -42,7 +42,7 @@ gets things done — then quietly improves itself for next time.
 5. [Quickstart & setup](#5-quickstart--setup)
 6. [Configuration reference (.env)](#6-configuration-reference-env)
 7. [The agentic core in depth](#7-the-agentic-core-in-depth)
-8. [The complete tool catalog (59 tools)](#8-the-complete-tool-catalog-59-tools)
+8. [The complete tool catalog (61 tools)](#8-the-complete-tool-catalog-61-tools)
 9. [The memory brain](#9-the-memory-brain)
 10. [Self-evolution](#10-self-evolution)
 11. [Multi-agent orchestration](#11-multi-agent-orchestration)
@@ -164,7 +164,7 @@ flowchart TD
     policy --> approvals["Approval Gate (agent/approvals.py)"]
     policy --> registry["Tool + Skill Registry (agent/registry.py)"]
 
-    registry --> tools["59 Tools (agent/tools/*)"]
+    registry --> tools["61 Tools (agent/tools/*)"]
     loop --> subagents["Specialist Sub-agents (agent/subagent.py)"]
 
     tools --> brain[("Memory Brain")]
@@ -202,7 +202,7 @@ flowchart LR
         EVO["Self-evolution"]
     end
     subgraph Capabilities
-        REG["Tool Registry (59)"]
+        REG["Tool Registry (61)"]
         SKILLS["Self-authored tools"]
         OPT["Strategy optimizer"]
     end
@@ -536,13 +536,13 @@ manual and re-injected forever after.
 
 ---
 
-## 8. The complete tool catalog (59 tools)
+## 8. The complete tool catalog (61 tools)
 
 Tools are grouped by `category`. **🔒 = approval-gated** (won't run until you approve,
 unless `AUTONOMY_LEVEL=autonomous` / `AUTO_APPROVE=true`). Sub-agents receive only the
 categories relevant to their role (plus `memory`, which is always available).
 
-> Counts: **memory 8 · crm 6 · research 4 · outreach 3 · social 3 · reminders 3 · tasks 8 · goals 3 · calendar 3 · perception 6 · evolution 7 · meta 3 · orchestration 2 = 59**
+> Counts: **memory 8 · crm 6 · research 4 · outreach 3 · social 3 · reminders 3 · tasks 10 · goals 3 · calendar 3 · perception 6 · evolution 7 · meta 3 · orchestration 2 = 61**
 
 ### 8.1 `memory` (8)
 
@@ -601,7 +601,7 @@ categories relevant to their role (plus `memory`, which is always available).
 | `list_reminders` | — | List pending reminders. |
 | `cancel_reminder` | — | Cancel a pending reminder by id. |
 
-### 8.7 `tasks` (8 — includes durable projects)
+### 8.7 `tasks` (10 — includes durable projects + document generation)
 
 | Tool | Approval | What it does |
 |---|:--:|---|
@@ -613,6 +613,8 @@ categories relevant to their role (plus `memory`, which is always available).
 | `project_status` | — | Full step-by-step status of one project, including step results. |
 | `advance_project` | — | Mark a project step done + checkpoint its result. |
 | `complete_project` | — | Mark an entire project finished. |
+| `generate_pdf` | — | Generate a **real PDF** (report/brief/one-pager/memo) from a title + body and **deliver it to you on Telegram** (falls back to `.txt` if `fpdf2` isn't installed). |
+| `create_document` | — | Create a `.md`/`.txt` document from content and deliver it to you on Telegram (for notes/specs/drafts). |
 
 ### 8.8 `goals` (3)
 
@@ -1069,7 +1071,7 @@ FOUDNER_OS/
 │   ├── budget.py                # Spend cap, kill switch, cost tracking
 │   ├── trace.py                 # Per-turn flight recorder
 │   ├── store.py                 # Agent SQLite tables + accessors
-│   └── tools/                   # 59 tools across categories
+│   └── tools/                   # 61 tools across categories
 │       ├── __init__.py          # Imports all tool modules (registration) + loads generated
 │       ├── memory_tools.py      ├── brain_tools.py      ├── world_tools.py
 │       ├── crm_tools.py         ├── research_tools.py   ├── outreach_tools.py
@@ -1165,7 +1167,7 @@ you want; the agent picks the tools.
 ### 22.1 Fast local checks (no Telegram)
 
 ```bash
-# All modules import + all 59 tools register
+# All modules import + all 61 tools register
 python -c "import agent.tools, agent.core, scheduler.jobs, bot.handlers; from agent import registry; print('OK -', len(registry.all_tools()), 'tools')"
 
 # Behavior regression (side-effect-free)
@@ -1440,10 +1442,12 @@ Built incrementally, one commit per phase:
 | `feat(phase7)` | Tracing, token/cost tracking, replay. |
 | `feat(phase8)` | Ollama fallback + semantic LLM cache. |
 | `feat: Founder World Model` | Live business snapshot injected every turn. |
+| `fix: validate approval-gated tool args` | Reject incomplete `create_tool` (and any approval-gated) calls up front instead of crashing at execution; non-empty self-authored tool bodies enforced. |
+| `feat: PDF/document generation` | Built-in `generate_pdf` + `create_document` tools (real PDFs via `fpdf2`) delivered to Telegram; all bot replies degrade Markdown→plain safely (fixes 400 Bad Request). |
 
 ---
 
-## Appendix A — Full tool reference (all 59)
+## Appendix A — Full tool reference (all 61)
 
 Every tool below shows its **category**, whether it is **approval-gated**, its
 **parameters**, what it **returns**, an example **natural-language trigger** (what you'd
@@ -1788,6 +1792,28 @@ Mark a step done + checkpoint its result.
 | Param | Type | Req |
 |---|---|:--:|
 | `project_id` | integer | ✓ |
+
+#### `generate_pdf` — `cat: tasks`
+Generate a real PDF from a title + body and deliver it to the founder on Telegram. Falls back to a `.txt` file if `fpdf2` isn't installed.
+
+| Param | Type | Req | Notes |
+|---|---|:--:|---|
+| `title` | string | ✓ | Document title/heading. |
+| `content` | string | ✓ | Full body text; newlines become paragraphs. |
+| `filename` | string | — | Optional base filename (no extension). |
+
+- **Returns:** `{created, format, path, delivered, note}`.
+- **Trigger:** *"write a one-page Q2 investor update and send it as a PDF"*
+
+#### `create_document` — `cat: tasks`
+Create a `.md`/`.txt` document and deliver it to the founder on Telegram (notes/specs/drafts).
+
+| Param | Type | Req | Notes |
+|---|---|:--:|---|
+| `title` | string | ✓ | |
+| `content` | string | ✓ | |
+| `extension` | string | — | `md` (default) or `txt`. |
+| `filename` | string | — | Optional base filename. |
 
 ---
 
