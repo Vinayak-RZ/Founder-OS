@@ -17,7 +17,7 @@ client = chromadb.PersistentClient(
     settings=Settings(anonymized_telemetry=False),
 )
 
-COLLECTIONS = ["conversations", "research", "notes", "outreach"]
+COLLECTIONS = ["conversations", "research", "notes", "outreach", "documents"]
 
 def get_collection(name: str):
     return client.get_or_create_collection(name)
