@@ -239,6 +239,14 @@ async def job_consolidate_memory():
         await consolidate()
     except Exception as e:
         logger.error(f"Memory consolidation failed: {e}")
+    # Refresh the GraphRAG community map so 'ask_network' stays current.
+    try:
+        from memory import graph, graphrag
+        graph.build_from_crm()
+        res = await graphrag.build_communities()
+        logger.info(f"[Scheduler] GraphRAG map rebuilt: {res.get('communities')} communities.")
+    except Exception as e:
+        logger.error(f"GraphRAG rebuild failed: {e}")
 
 
 async def job_backup():
