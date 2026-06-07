@@ -36,6 +36,9 @@ class Config:
     ollama_model: str
     semantic_cache: bool
     cache_distance_threshold: float
+    # Tool-RAG: retrieve only the most relevant tools per turn instead of all of them
+    tool_rag: bool
+    tool_rag_k: int
     # Google Calendar (optional)
     google_credentials_path: str
     google_token_path: str
@@ -96,6 +99,8 @@ def load_config() -> Config:
         ollama_model=os.getenv("OLLAMA_MODEL", "llama3.1").strip(),
         semantic_cache=os.getenv("SEMANTIC_CACHE", "true").strip().lower() in ("1", "true", "yes", "on"),
         cache_distance_threshold=float(os.getenv("CACHE_DISTANCE_THRESHOLD", "0.08") or "0.08"),
+        tool_rag=os.getenv("TOOL_RAG", "true").strip().lower() in ("1", "true", "yes", "on"),
+        tool_rag_k=int(os.getenv("TOOL_RAG_K", "16") or "16"),
         google_credentials_path=os.getenv("GOOGLE_CREDENTIALS_PATH", "./data/google_credentials.json"),
         google_token_path=os.getenv("GOOGLE_TOKEN_PATH", "./data/google_token.json"),
         x_api_key=os.getenv("X_API_KEY", ""),

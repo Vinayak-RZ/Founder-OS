@@ -10,7 +10,7 @@ import asyncio
 import json
 import logging
 
-from agent import registry, identity, evolution, planner, critic, trace
+from agent import registry, identity, evolution, planner, critic, trace, tool_retrieval
 from agent.loop import execute_loop
 import agent.tools  # noqa: F401 — importing registers every tool
 from agent.store import set_plan_status
@@ -87,7 +87,13 @@ async def run(user_message: str, image_context: str = "", actor: str = "user",
 
     messages.append({"role": "user", "content": enriched})
 
-    schemas = registry.all_schemas()
+    # Tool-RAG: a direct user turn only sees the tools relevant to it (+ a core
+    # set). Proactive/system actors (heartbeat, sub-agents) keep the full catalog
+    # so autonomous routines never lose a capability.
+    if actor == "user":
+        schemas = tool_retrieval.schemas_for_message(user_message)
+    else:
+        schemas = registry.all_schemas()
     tools_used = []
 
     # ── EXECUTE ────────────────────────────────────────────────────────────────
