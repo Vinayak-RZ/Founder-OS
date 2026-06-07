@@ -22,6 +22,9 @@ flask==3.0.3
 # Dev / testing
 pytest==8.2.0
 
+# Optional: expose tools to MCP clients (Claude Desktop, Cursor, ...) via mcp_server.py
+# mcp==1.2.0
+
 # Optional: cross-encoder reranker for sharper recall (heavy, pulls torch).
 # Install only if you want it; retrieval works without it (RRF fusion).
 # sentence-transformers==2.7.0
