@@ -15,7 +15,8 @@
 > looks after your goals — all behind a human approval gate for anything risky.
 
 Founder OS is not a chatbot. It is an **autonomous agent**: you tell it an outcome, and
-it decides which of its **73 tools** to call, chains them, verifies its own work, and
+it decides which of its **76 tools** to call (retrieving only the relevant ones per turn
+via Tool-RAG), chains them, verifies its own work, and
 gets things done — then quietly improves itself for next time.
 
 ---
@@ -42,7 +43,7 @@ gets things done — then quietly improves itself for next time.
 5. [Quickstart & setup](#5-quickstart--setup)
 6. [Configuration reference (.env)](#6-configuration-reference-env)
 7. [The agentic core in depth](#7-the-agentic-core-in-depth)
-8. [The complete tool catalog (73 tools)](#8-the-complete-tool-catalog-73-tools)
+8. [The complete tool catalog (76 tools)](#8-the-complete-tool-catalog-76-tools)
 9. [The memory brain](#9-the-memory-brain)
 10. [Self-evolution](#10-self-evolution)
 11. [Multi-agent orchestration](#11-multi-agent-orchestration)
@@ -117,6 +118,12 @@ research and industry practice, each mapped to a concrete, local-friendly module
 | **Subtask DAG** | Plans persisted as inspectable, resumable steps | `plans` + `subtasks` tables in `agent/store.py` |
 | **Generative Agents memory** | Retrieval scored by relevance + recency + importance | `memory/retrieval.py` (`episodic_recall`) |
 | **GraphRAG (graph memory)** | Entities + typed relations for structural recall | `memory/graph.py`, `graph_lookup`/`graph_link` tools |
+| **GraphRAG global queries** | Community detection (label propagation) + LLM cluster summaries, map-reduced to answer big-picture network questions | `memory/graphrag.py`, `ask_network`/`rebuild_network_map`/`list_network_map` |
+| **Tool-RAG** | Retrieve only the most relevant tools per turn (+ a core set) instead of sending the whole catalog | `agent/tool_retrieval.py` (wired in `agent/core.py`) |
+| **Self-RAG / Corrective RAG** | Grade retrieved chunks; rewrite + re-retrieve when weak; web fallback; cited answer with confidence | `agent/self_rag.py` (`ask_documents`) |
+| **Confidence + abstention** | Calibration directive + a measured confidence signal; low-confidence answers surfaced honestly with a clarifying question | `agent/confidence.py`, `agent/critic.py`, `agent/identity.py` |
+| **MCP server** | Expose every tool over the Model Context Protocol to external clients (Claude Desktop, Cursor), still honoring the approval gate | `mcp_server.py` |
+| **LLM-as-judge evals** | Rubric-based quality/safety scoring (drafting, abstention, fraud refusal, approval gate) as a self-evolution safety net | `evals/judge.py`, `evals/quality_runner.py` |
 | **Hybrid retrieval (dense + sparse)** | Vector + BM25 fused via Reciprocal Rank Fusion | `memory/retrieval.py` (`hybrid_search`) |
 | **Cross-encoder reranking** | Re-score top hits for precision (optional) | `memory/retrieval.py` (`_maybe_rerank`) |
 | **Memory consolidation ("sleep")** | Compress episodic → durable semantic memory nightly | `memory/consolidation.py` |
@@ -164,7 +171,7 @@ flowchart TD
     policy --> approvals["Approval Gate (agent/approvals.py)"]
     policy --> registry["Tool + Skill Registry (agent/registry.py)"]
 
-    registry --> tools["73 Tools (agent/tools/*)"]
+    registry --> tools["76 Tools (agent/tools/*)"]
     loop --> subagents["Specialist Sub-agents (agent/subagent.py)"]
 
     tools --> brain[("Memory Brain")]
@@ -202,7 +209,7 @@ flowchart LR
         EVO["Self-evolution"]
     end
     subgraph Capabilities
-        REG["Tool Registry (73)"]
+        REG["Tool Registry (76)"]
         SKILLS["Self-authored tools"]
         OPT["Strategy optimizer"]
     end
@@ -492,6 +499,9 @@ All configuration is read in `config.py` into a typed `Config` dataclass. Only
 | `OLLAMA_MODEL` | `llama3.1` | The local model to use. |
 | `SEMANTIC_CACHE` | `true` | Cache near-duplicate completion prompts to save tokens. |
 | `CACHE_DISTANCE_THRESHOLD` | `0.08` | Max embedding distance for a cache hit (lower = stricter). |
+| `TOOL_RAG` | `true` | Tool-RAG: retrieve only the most relevant tools per user turn (+ a core set) instead of sending the whole catalog. Falls back to all tools on any failure. |
+| `TOOL_RAG_K` | `16` | How many tools to retrieve before adding the always-on core set. |
+| `RUN_LLM_EVALS` | `false` | When `1`/`true` (and an API key is set), the opt-in LLM-as-judge quality evals run in the pytest suite (`tests/test_evals_quality.py`). |
 
 ### Google Calendar (optional)
 
@@ -561,14 +571,14 @@ manual and re-injected forever after.
 
 ---
 
-## 8. The complete tool catalog (73 tools)
+## 8. The complete tool catalog (76 tools)
 
 Tools are grouped by `category`. **Yes** in the Approval column means the tool is
 approval-gated (won't run until you approve, unless `AUTONOMY_LEVEL=autonomous` /
 `AUTO_APPROVE=true`); **—** means it runs directly. Sub-agents receive only the
 categories relevant to their role (plus `memory`, which is always available).
 
-> Counts: **memory 8 · crm 6 · research 8 · outreach 3 · social 3 · reminders 3 · tasks 12 · goals 3 · calendar 3 · perception 7 · evolution 7 · meta 6 · orchestration 2 · finance 2 = 73**
+> Counts: **memory 11 · crm 6 · research 8 · outreach 3 · social 3 · reminders 3 · tasks 12 · goals 3 · calendar 3 · perception 7 · evolution 7 · meta 6 · orchestration 2 · finance 2 = 76**
 
 ### 8.1 `memory` (8)
 
@@ -1116,7 +1126,7 @@ FOUDNER_OS/
 │   ├── budget.py                # Spend cap, kill switch, cost tracking
 │   ├── trace.py                 # Per-turn flight recorder
 │   ├── store.py                 # Agent SQLite tables + accessors
-│   └── tools/                   # 73 tools across categories
+│   └── tools/                   # 76 tools across categories
 │       ├── __init__.py          # Imports all tool modules (registration) + loads generated
 │       ├── memory_tools.py      ├── brain_tools.py      ├── world_tools.py
 │       ├── crm_tools.py         ├── research_tools.py   ├── outreach_tools.py
@@ -1213,7 +1223,7 @@ you want; the agent picks the tools.
 ### 22.1 Fast local checks (no Telegram)
 
 ```bash
-# All modules import + all 73 tools register
+# All modules import + all 76 tools register
 python -c "import agent.tools, agent.core, scheduler.jobs, bot.handlers; from agent import registry; print('OK -', len(registry.all_tools()), 'tools')"
 
 # Behavior regression (side-effect-free)
@@ -1503,10 +1513,16 @@ Built incrementally, one commit per phase:
 | `feat: local web dashboard` | Flask control panel on `localhost:8787` (`DASHBOARD_*`) showing snapshot, runway, usage, approvals, traces. |
 | `feat: email reply-tracking loop` | Auto-detects replies from CRM contacts (`seen_emails` dedupe), logs them, marks the contact **responded**, drafts a suggested reply, and surfaces it on Telegram with one-tap Approve/Reject (or auto-sends when autonomy is high) while keeping a 3-day follow-up scheduled; `check_replies_now` tool + repurposed inbox job. |
 | `feat: PUBLIC_ACCESS switch` | One env flag opens the bot from single-user to anyone (`bot/middleware.py`); default stays private. Proactive messages still go only to the owner. |
+| `feat: Tool-RAG` | Each direct user turn now retrieves only the most relevant tools (semantic match over tool descriptions via the local embedder) plus an always-on core set, instead of sending all 76 schemas — cheaper, sharper tool choice, and it scales to hundreds of tools. Falls back to the full catalog on any failure. `TOOL_RAG`/`TOOL_RAG_K` env flags; `agent/tool_retrieval.py`. |
+| `feat: Self-RAG / Corrective RAG` | `ask_documents` is now self-correcting: it grades retrieved passages, rewrites the query and re-retrieves when they're weak, falls back to web search if the docs don't answer, and returns a synthesized, source-cited answer with a confidence level (and says so honestly when it doesn't know). `agent/self_rag.py`. |
+| `feat: confidence + abstention` | A calibration directive (abstain/ask rather than guess) plus a measured confidence signal from the critic; genuinely low-confidence answers are surfaced honestly with a clarifying question instead of a confident-sounding guess. `agent/confidence.py`. |
+| `feat: GraphRAG global queries` | Community detection (label propagation) over the knowledge graph + LLM-generated cluster summaries, map-reduced to answer big-picture questions about the founder's network via `ask_network`; rebuilt nightly. `memory/graphrag.py`. |
+| `feat: MCP server` | `mcp_server.py` exposes every tool over the Model Context Protocol so any MCP client (Claude Desktop, Cursor) can drive Founder OS — with approval-gated actions still routed through the Telegram approval queue, so external clients can propose but not unilaterally send. |
+| `feat: LLM-as-judge evals` | A rubric-based judge scores answer quality and safety (drafting, abstention, fraud refusal, approval-gate respect); opt-in CI gate (`RUN_LLM_EVALS=1`) guarding self-evolution, with the harness itself unit-tested offline. `evals/judge.py`, `evals/quality_runner.py`. |
 
 ---
 
-## Appendix A — Full tool reference (all 73)
+## Appendix A — Full tool reference (all 76)
 
 Every tool below shows its **category**, whether it is **approval-gated**, its
 **parameters**, what it **returns**, an example **natural-language trigger** (what you'd
@@ -1608,6 +1624,33 @@ Structured snapshot of your business: pipeline, goals, projects, reminders, appr
 - **Params:** none.
 - **Returns:** the full world-model dict.
 - **Trigger:** *"where do things stand right now?"*
+
+#### `ask_network` — `cat: memory`
+GraphRAG global query: answer big-picture/thematic questions about your network by
+reasoning over knowledge-graph community summaries (map-reduce over the most relevant clusters).
+
+| Param | Type | Req | Default | Notes |
+|---|---|:--:|---|---|
+| `question` | string | | — | A thematic/global question. |
+| `top_n` | integer | — | 4 | How many communities to consider. |
+
+- **Returns:** `{answer, communities:[{size, summary}]}`.
+- **Trigger:** *"how is my network clustered?"*, *"which parts of my world touch fintech?"*
+
+#### `rebuild_network_map` — `cat: memory`
+Refresh the graph from the CRM, detect communities (label propagation), and regenerate
+their summaries (the GraphRAG index).
+
+- **Params:** none.
+- **Returns:** `{communities, items:[{label, size, summary, members}]}`.
+- **Trigger:** *"rebuild my network map"* (also runs nightly).
+
+#### `list_network_map` — `cat: memory`
+List the current knowledge-graph communities and their summaries (no rebuild).
+
+- **Params:** none.
+- **Returns:** `{communities, items:[...]}`.
+- **Trigger:** *"show me my network clusters"*
 
 ---
 
