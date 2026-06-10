@@ -11,7 +11,7 @@ BUILDER = "Utso (@officiallyutso)"
 
 ARCHITECTURE = [
     "Agentic core: a ReAct-style tool-calling loop with plan -> execute -> verify (planner + self-critic).",
-    "Layered memory: a ChromaDB vector store, a SQLite relational store, a local knowledge graph, and a live Founder World Model.",
+    "Layered memory: a Qdrant Cloud vector store, a SQLite relational store, a local knowledge graph, and a live Founder World Model.",
     "Hybrid retrieval: dense + sparse (BM25) fused with Reciprocal Rank Fusion, episodic recall, and nightly memory consolidation.",
     "Self-evolution: lessons, reusable skills, a self-editable operating manual, self-authored tools, and an A/B strategy optimizer.",
     "Multi-agent orchestration: a supervisor that delegates to researcher / outreach / ops / analyst specialists, including in parallel.",

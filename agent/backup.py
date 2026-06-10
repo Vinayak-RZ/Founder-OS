@@ -1,6 +1,6 @@
 """Backups of the agent's entire brain.
 
-Everything the agent knows lives under ./data (SQLite DB + Chroma vector store +
+Everything the agent knows lives under ./data (SQLite DB + Qdrant cloud vectors +
 world state + generated files). A single disk loss = total amnesia, so we zip the
 whole data directory (excluding the backups folder itself) into ./data/backups/
 and keep only the most recent N archives.

@@ -48,6 +48,10 @@ class Config:
     x_access_token: str
     x_access_token_secret: str
     x_bearer_token: str
+    # Qdrant Cloud vector memory
+    qdrant_url: str
+    qdrant_api_key: str
+    qdrant_collection_prefix: str
 
 def load_config() -> Config:
     missing = []
@@ -65,6 +69,10 @@ def load_config() -> Config:
     ]
     if not any(llm_keys):
         missing.append("at least one of GROQ_API_KEY / GOOGLE_GEMINI_API_KEY / OPENAI_API_KEY")
+    if not os.getenv("QDRANT_URL"):
+        missing.append("QDRANT_URL")
+    if not os.getenv("QDRANT_API_KEY"):
+        missing.append("QDRANT_API_KEY")
 
     if missing:
         print(f"[FATAL] Missing required env vars: {', '.join(missing)}")
@@ -108,6 +116,9 @@ def load_config() -> Config:
         x_access_token=os.getenv("X_ACCESS_TOKEN", ""),
         x_access_token_secret=os.getenv("X_ACCESS_TOKEN_SECRET", ""),
         x_bearer_token=os.getenv("X_BEARER_TOKEN", ""),
+        qdrant_url=os.getenv("QDRANT_URL", "").strip().rstrip("/"),
+        qdrant_api_key=os.getenv("QDRANT_API_KEY", "").strip(),
+        qdrant_collection_prefix=os.getenv("QDRANT_COLLECTION_PREFIX", "").strip(),
     )
 
 config = load_config()

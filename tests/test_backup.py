@@ -8,9 +8,7 @@ def test_create_and_list_backup(tmp_path, monkeypatch):
     data = tmp_path / "data"
     data.mkdir()
     (data / "founder_os.db").write_text("dummy db")
-    chroma = data / "chroma"
-    chroma.mkdir()
-    (chroma / "index.bin").write_text("vectors")
+    (data / "notes.txt").write_text("local notes")
     bdir = data / "backups"
 
     monkeypatch.setattr(backup, "DATA_DIR", str(data))

@@ -3,7 +3,7 @@ Fusion, plus optional cross-encoder reranking and Generative-Agents-style
 episodic scoring (relevance + recency + importance).
 
 Design choices for a local/free single-user setup:
-  - Dense recall uses the existing Chroma store.
+  - Dense recall uses the Qdrant vector store.
   - Sparse recall uses rank_bm25 (tiny, pure-Python). If it's not installed we
     degrade gracefully to dense-only.
   - Fusion is RRF (no tuning, no extra model needed).

@@ -16,7 +16,6 @@ from scheduler.jobs import start_scheduler
 from config import config
 
 os.makedirs("./data/logs", exist_ok=True)
-os.makedirs("./data/chroma", exist_ok=True)
 
 logging.basicConfig(
     level=logging.INFO,

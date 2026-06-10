@@ -6,8 +6,8 @@ embed each tool's name + description once, and per turn retrieve the top-k most
 relevant tools — unioned with a small always-on CORE set so the agent never loses
 essential capabilities (memory, delegation, self-knowledge).
 
-Embeddings reuse Chroma's bundled local model (no network, no new dependency) and
-are cached in memory; the cache rebuilds whenever the tool set changes (e.g. after
+Embeddings reuse the same local fastembed model as vector memory (no network API)
+and are cached in memory; the cache rebuilds whenever the tool set changes (e.g. after
 `create_tool`). If the embedder is unavailable it degrades to a dependency-free
 lexical (token-overlap) ranker, and on any hard failure it falls back to the full
 catalog — so tool access is never silently lost.
@@ -47,8 +47,13 @@ def _get_embedder():
         return _embed
     _embed_tried = True
     try:
-        from chromadb.utils import embedding_functions
-        _embed = embedding_functions.DefaultEmbeddingFunction()
+        from memory.vector_store import embed_texts
+
+        class _Embedder:
+            def __call__(self, docs):
+                return embed_texts(list(docs))
+
+        _embed = _Embedder()
     except Exception as e:
         logger.info(f"[tool_retrieval] embedder unavailable ({e}); lexical fallback.")
         _embed = None

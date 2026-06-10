@@ -2,7 +2,7 @@
 
 Repeated or near-identical prompts (planning the same kind of goal, re-analyzing
 similar inputs) don't need a fresh paid call. We embed the request and look for a
-near-duplicate in a dedicated Chroma collection; a close enough hit returns the
+near-duplicate in a dedicated Qdrant collection; a close enough hit returns the
 cached answer. Only applied to side-effect-free task types, with a conservative
 similarity threshold so we never serve a stale answer to a genuinely new question.
 """
