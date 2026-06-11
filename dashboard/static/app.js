@@ -6,6 +6,8 @@ let state = {
   live: {},
   selectedAgent: localStorage.getItem("fos_selected_agent") || "pulse",
   activeWorldId: localStorage.getItem("fos_active_world") || "root",
+  agentsTab: localStorage.getItem("fos_agents_tab") || "runs",
+  expandedRunId: null,
 };
 let currentView = "dashboard";
 let chatHistory = JSON.parse(localStorage.getItem("fos_chat") || "[]");
@@ -145,29 +147,6 @@ const AGENT_INITIALS = {
   vault: "VL",
 };
 
-const DELEGATE_HINTS = {
-  pulse: [
-    "Summarize what's open across CRM, tasks, and goals this week",
-    "What needs my attention in the active world?",
-  ],
-  outreach: [
-    "Draft a short follow-up email to my hottest CRM lead",
-    "Who should I reach out to next from the pipeline?",
-  ],
-  leads: [
-    "List prospects I haven't contacted in 14 days",
-    "Suggest 3 leads to prioritize for outreach today",
-  ],
-  market: [
-    "Summarize competitor positioning from the vault",
-    "What industry trends are in our linked docs?",
-  ],
-  vault: [
-    "What do our docs say about ICP and positioning?",
-    "Find product specs mentioned in the knowledge vault",
-  ],
-};
-
 function agentRoleBadge(role) {
   const m = AGENT_ROLES[role] || { label: role || "Specialist", cls: "" };
   return `<span class="agent-role-badge ${m.cls}">${esc(m.label)}</span>`;
@@ -179,62 +158,175 @@ function agentAvatar(agentId, role) {
   return `<span class="agent-avatar ${m.avatar || "agent-avatar--aggregator"}" aria-hidden="true">${esc(initials)}</span>`;
 }
 
-function renderAgentCardInner(a, live, selectable, sel) {
+function lastRunForAgent(agentId, runs) {
+  const hit = (runs || []).find(r => r.agent === agentId);
+  if (!hit?.ts) return "";
+  const d = new Date(typeof hit.ts === "number" && hit.ts < 1e12 ? hit.ts * 1000 : hit.ts);
+  return d.toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+}
+
+function collectAgentRuns() {
+  const fromApi = state._agentRunsApi || [];
+  const local = JSON.parse(localStorage.getItem("fos_agent_runs") || "[]");
+  const merged = [...local];
+  for (const r of fromApi) {
+    if (!merged.some(m => m.id === r.id)) merged.push({ ...r, source: "trace" });
+  }
+  merged.sort((a, b) => (b.ts || 0) - (a.ts || 0));
+  return merged.slice(0, 50);
+}
+
+function persistAgentRun(record) {
+  const rows = JSON.parse(localStorage.getItem("fos_agent_runs") || "[]");
+  rows.unshift(record);
+  localStorage.setItem("fos_agent_runs", JSON.stringify(rows.slice(0, 50)));
+}
+
+function renderFleetCard(a, live, sel, runs) {
   const isBusy = agentBusy(live, a.id);
-  const isSel = selectable && a.delegate && sel === a.id;
-  return `
-    <div class="agent-card-head">
-      <div class="agent-card-title-row">
-        ${agentAvatar(a.id, a.role)}
-        <div>
-          <h3>${esc(a.label)}</h3>
-          ${a.role ? agentRoleBadge(a.role) : ""}
-        </div>
-      </div>
-      <span class="agent-status ${isBusy ? "busy" : "ready"}">${isBusy ? "Working" : "Ready"}</span>
+  const isSel = sel === a.id;
+  const last = lastRunForAgent(a.id, runs);
+  return `<button type="button" class="fleet-card${isBusy ? " is-busy" : ""}${isSel ? " is-selected" : ""}" data-select-agent="${esc(a.id)}">
+    <div class="fleet-card__top">
+      ${agentAvatar(a.id, a.role)}
+      <span class="fleet-card__status ${isBusy ? "is-busy" : ""}" title="${isBusy ? "Working" : "Idle"}"></span>
     </div>
-    <p>${esc((a.brief || "").slice(0, 140))}</p>
-    ${(a.skills || []).length ? `<p class="agent-meta">Skills: ${esc(a.skills.join(", "))}</p>` : ""}
-    ${a.delegate && selectable
-      ? `<p class="world-meta">${isSel ? "Selected — describe task on the right" : "Click to delegate"}</p>`
-      : `<p class="world-meta">Open <strong>Chat</strong> to message the supervisor</p>`}`;
+    <div class="fleet-card__name">${esc(a.label)}</div>
+    ${a.role ? agentRoleBadge(a.role) : ""}
+    <div class="fleet-card__meta">
+      <span>${a.tool_count ?? "—"} tools</span>
+      ${last ? `<span>${esc(last)}</span>` : ""}
+    </div>
+  </button>`;
 }
 
 function renderAgentCards(agents, live, selectable = false) {
-  const sup = agents?.supervisor || {};
   const specs = agents?.specialists || [];
   const sel = state.selectedAgent;
-  const supervisor = {
-    id: "supervisor",
-    label: "Supervisor",
-    role: "aggregator",
-    brief: sup.role || "Orchestrates specialists and routes your requests",
-    delegate: false,
-  };
-  const specialistCards = specs.map(s => ({ ...s, label: s.label || s.id, delegate: true }));
-
-  function cardHtml(a, extraCls = "") {
-    const isBusy = agentBusy(live, a.id);
-    const isSel = selectable && a.delegate && sel === a.id;
-    const inner = renderAgentCardInner(a, live, selectable, sel);
-    const cls = `agent-card${extraCls}${isBusy ? " is-busy" : ""}${isSel ? " is-selected" : ""}`;
-    if (selectable && a.delegate) {
-      return `<button type="button" class="${cls} agent-card-selectable" data-select-agent="${esc(a.id)}">${inner}</button>`;
-    }
-    return `<article class="${cls}">${inner}</article>`;
+  const runs = collectAgentRuns();
+  if (!selectable) {
+    return `<div class="agent-grid">${specs.map(a => {
+      const card = { ...a, label: a.label || a.id };
+      const busy = agentBusy(live, a.id);
+      return `<article class="agent-card${busy ? " is-busy" : ""}">
+        <div class="agent-card-head">${renderFleetCardInner(card, live, runs)}</div>
+      </article>`;
+    }).join("")}</div>`;
   }
-
-  return `
-    <div class="agents-picker-supervisor">${cardHtml(supervisor, " agent-card--supervisor")}</div>
-    <div class="agent-grid agent-grid--specialists">${specialistCards.map(a => cardHtml(a)).join("")}</div>`;
+  return `<div class="fleet-rail">${specs.map(a =>
+    renderFleetCard({ ...a, label: a.label || a.id }, live, sel, runs)
+  ).join("")}</div>`;
 }
 
-function delegateHintsHtml(agentId) {
-  const hints = DELEGATE_HINTS[agentId] || [];
-  if (!hints.length) return "";
-  return `<div class="delegate-hints">${hints.map(h =>
-    `<button type="button" class="delegate-hint" data-delegate-hint="${esc(h)}">${esc(h)}</button>`
-  ).join("")}</div>`;
+function renderFleetCardInner(a, live, runs) {
+  const isBusy = agentBusy(live, a.id);
+  const last = lastRunForAgent(a.id, runs);
+  return `
+    <div class="agent-card-title-row">
+      ${agentAvatar(a.id, a.role)}
+      <div><h3>${esc(a.label)}</h3>${a.role ? agentRoleBadge(a.role) : ""}</div>
+    </div>
+    <span class="agent-status ${isBusy ? "busy" : "ready"}">${isBusy ? "Working" : "Ready"}</span>
+    <p class="agent-meta">${a.tool_count ?? 0} tools${last ? ` · ${esc(last)}` : ""}</p>`;
+}
+
+function renderAgentRunsTable(runs) {
+  if (!runs.length) {
+    return `<div class="empty-state"><p class="title-sm">No specialist runs yet</p></div>`;
+  }
+  return `<div class="table-wrap"><table class="data-table">
+    <thead><tr><th>Time</th><th>Agent</th><th>Task</th><th>Duration</th><th>Tools</th><th></th></tr></thead>
+    <tbody>${runs.map(r => {
+      const ts = r.ts ? fmtTime(r.ts) : "—";
+      const tools = (r.tools || []).slice(0, 4).join(", ");
+      const expanded = state.expandedRunId === r.id;
+      return `<tr class="data-row${expanded ? " is-expanded" : ""}" data-run-id="${esc(r.id)}">
+        <td class="mono muted">${esc(ts)}</td>
+        <td><span class="fleet-inline-badge">${esc((r.agent || "").toUpperCase())}</span></td>
+        <td class="task-cell">${esc((r.task || "").slice(0, 120))}</td>
+        <td class="mono">${r.duration_s ? `${r.duration_s}s` : "—"}</td>
+        <td class="muted">${esc(tools || "—")}</td>
+        <td><button type="button" class="button-tertiary-text button-sm" data-toggle-run="${esc(r.id)}">${expanded ? "Hide" : "View"}</button></td>
+      </tr>
+      ${expanded ? `<tr class="data-row-detail"><td colspan="6"><pre class="run-result mono">${esc(r.result || "No output recorded")}</pre></td></tr>` : ""}`;
+    }).join("")}</tbody>
+  </table></div>`;
+}
+
+function renderAgentsToolsPanel() {
+  const t = state._tools || {};
+  const byCat = t.by_category || {};
+  const cats = Object.entries(byCat).sort((a, b) => b[1] - a[1]);
+  return `<div class="console-split">
+    <div class="driver-card">${cats.map(([cat, n]) =>
+      `<div class="kv-row"><span class="k">${esc(cat)}</span><span class="v">${n}</span></div>`
+    ).join("") || "<p class='muted'>No tools loaded</p>"}</div>
+    <div class="driver-card tool-list-compact">${(t.tools || []).slice(0, 24).map(x =>
+      `<div class="tool-chip">${esc(x.name)}${x.requires_approval ? '<span class="badge-pill">approval</span>' : ""}</div>`
+    ).join("")}</div>
+  </div>`;
+}
+
+function renderAgentsCrmPanel() {
+  const crm = state._crm || {};
+  const pipeline = crm.pipeline || {};
+  const contacts = crm.contacts || [];
+  const followups = crm.followups_due || [];
+  const pipeRows = Object.entries(pipeline).map(([k, v]) =>
+    `<div class="kv-row"><span class="k">${esc(k)}</span><span class="v">${v}</span></div>`
+  ).join("");
+  const fu = followups.slice(0, 8).map(c =>
+    `<li>${esc(c.name)} <span class="muted">${esc(c.company || "")}</span></li>`
+  ).join("") || "<li class='muted'>None due</li>";
+  const recent = contacts.slice(0, 10).map(c =>
+    `<tr><td>${esc(c.name)}</td><td>${esc(c.company || "—")}</td><td>${esc(c.status || "—")}</td></tr>`
+  ).join("");
+  return `<div class="console-split">
+    <section class="driver-card"><p class="caption-uppercase">Pipeline</p>${pipeRows || "<p class='muted'>Empty</p>"}
+      <p class="caption-uppercase" style="margin-top:var(--space-sm)">Follow-ups due</p><ul class="list-plain">${fu}</ul></section>
+    <section class="driver-card"><p class="caption-uppercase">Contacts (${contacts.length})</p>
+      <div class="table-wrap"><table class="data-table"><thead><tr><th>Name</th><th>Company</th><th>Status</th></tr></thead>
+      <tbody>${recent || "<tr><td colspan='3' class='muted'>No contacts</td></tr>"}</tbody></table></div>
+      <button type="button" class="button-outline-on-dark button-sm" data-goto="crm" style="margin-top:var(--space-xs)">Open CRM</button>
+    </section>
+  </div>`;
+}
+
+function renderAgentsVaultPanel() {
+  const vault = state._worldVault?.vault || state._worldVault || {};
+  const facets = vault.folders || vault.facets || [];
+  const q = state._agentsVaultQ || "";
+  return `<div class="console-split">
+    <section class="driver-card">
+      <p class="caption-uppercase">Vault · ${esc(activeWorldLabel())}</p>
+      <div class="vault-facet-grid" style="margin-top:var(--space-xs)">${facets.map(f =>
+        `<div class="vault-facet-card"><div class="vault-facet-head"><h4>${esc(f.domain_label || f.label || f.folder || "")}</h4><span class="badge-pill">${f.file_count ?? 0} files</span></div></div>`
+      ).join("") || "<p class='muted'>Select a sub-world or link a repo in Worlds</p>"}</div>
+      <button type="button" class="button-outline-on-dark button-sm" data-goto="world" style="margin-top:var(--space-sm)">Manage vault</button>
+    </section>
+    <section class="driver-card">
+      <div class="search-row">
+        <input type="search" class="text-input-on-dark" id="agents-vault-q" placeholder="Search vault…" value="${esc(q)}">
+        <button type="button" class="button-primary button-sm" id="agents-vault-search">Search</button>
+      </div>
+      <pre class="run-result mono" id="agents-vault-results" hidden></pre>
+    </section>
+  </div>`;
+}
+
+function renderAgentsTabPanel() {
+  const tab = state.agentsTab || "runs";
+  const runs = collectAgentRuns();
+  if (tab === "runs") return renderAgentRunsTable(runs);
+  if (tab === "live") {
+    const live = state.live || {};
+    return `${renderLivePanel(live, "agents-tab-live")}
+      <div id="graph-runtime-agents-tab" class="graph-canvas graph-canvas--compact" style="margin-top:var(--space-sm)"></div>`;
+  }
+  if (tab === "tools") return renderAgentsToolsPanel();
+  if (tab === "crm") return renderAgentsCrmPanel();
+  if (tab === "vault") return renderAgentsVaultPanel();
+  return "";
 }
 
 function selectedAgentMeta(agents) {
@@ -247,7 +339,10 @@ function drawGraphs() {
     FOSGraph.render("graph-runtime-dash", state._runtimeGraph, { layout: { name: "breadthfirst", directed: true, padding: 20 } });
   }
   if (currentView === "agents" && state._runtimeGraph) {
-    FOSGraph.render("graph-runtime-agents", state._runtimeGraph);
+    const el = state.agentsTab === "live" ? "graph-runtime-agents-tab" : "graph-runtime-agents";
+    if (document.getElementById(el)) {
+      FOSGraph.render(el, state._runtimeGraph);
+    }
   }
   if (currentView === "world") {
     const graph = worldGraphTab === "ecosystem"
@@ -339,7 +434,10 @@ async function pollLive() {
     if (["dashboard", "agents", "chat"].includes(currentView)) {
       state._runtimeGraph = await api("/graph/runtime").catch(() => state._runtimeGraph);
       if (currentView === "dashboard") FOSGraph.update("graph-runtime-dash", state._runtimeGraph);
-      if (currentView === "agents") FOSGraph.update("graph-runtime-agents", state._runtimeGraph);
+      if (currentView === "agents") {
+        const el = state.agentsTab === "live" ? "graph-runtime-agents-tab" : null;
+        if (el && document.getElementById(el)) FOSGraph.update(el, state._runtimeGraph);
+      }
     }
   } catch (_) { /* ignore */ }
 }
@@ -379,14 +477,16 @@ function renderDashboard() {
   const agents = state._agents || {};
 
   return `
-    <header class="hero-band-cinema command-hero">
-      <p class="section-eyebrow">${esc(cfg.company_name || "Your startup")}</p>
-      <h2 class="hero-title"><span class="hero-owner">${esc(ownerLabel())}</span></h2>
-      <p class="body-md" style="max-width:52ch">Operate ${esc(cfg.company_name || "your startup")}, research new ideas, and run specialists — all from one console.</p>
-      <div class="hero-actions">
-        <button type="button" class="button-primary" data-goto="chat">Message supervisor</button>
-        <button type="button" class="button-outline-on-dark" data-goto="agents">Delegate to agents</button>
-        ${pending > 0 ? `<button type="button" class="button-outline-on-dark" data-goto="approvals">Approvals (${pending})</button>` : ""}
+    <header class="command-header driver-card">
+      <div>
+        <p class="section-eyebrow">${esc(cfg.company_name || "Founder OS")}</p>
+        <h2 class="title-md">${esc(ownerLabel())}</h2>
+      </div>
+      <div class="command-header__actions">
+        <button type="button" class="button-primary button-sm" data-goto="chat">Chat</button>
+        <button type="button" class="button-outline-on-dark button-sm" data-goto="agents">Agents</button>
+        <button type="button" class="button-outline-on-dark button-sm" data-goto="world">Worlds</button>
+        ${pending > 0 ? `<button type="button" class="button-outline-on-dark button-sm" data-goto="approvals">Approvals (${pending})</button>` : ""}
       </div>
     </header>
     <div class="dashboard-grid">
@@ -446,63 +546,73 @@ function renderAgents() {
   const live = state.live || agents.live || {};
   const meta = selectedAgentMeta(agents);
   const draft = state._delegateDraft || "";
+  const runs = collectAgentRuns();
+  const pending = (state.approvals || []).length;
+  const busyCount = (agents.specialists || []).filter(s => agentBusy(live, s.id)).length;
   const skills = agents.skills || [];
-  const hasDraft = !!(draft || "").trim();
+  const tab = state.agentsTab || "runs";
   const hasResult = !!(state._delegateResult || "").trim();
-  const liveActive = !!live?.active;
-  return `
-    <div class="agents-page-header">
-      <section class="aggregator-hero driver-card" style="flex:1;min-width:min(100%,320px);margin:0">
-        <p class="section-eyebrow">Agent fleet</p>
-        <h2 class="hero-title" style="font-size:1.25rem;margin:var(--space-xxs) 0">Coordinate — don't deep-dive here</h2>
-        <p class="body-md" style="max-width:58ch;margin:0">Pick a specialist, run a focused task on <strong>${esc(activeWorldLabel())}</strong>. Research and builds stay in Cursor; use <strong>Vault</strong> to query linked docs.</p>
-        ${skills.length ? `<div class="skills-row">${skills.map(s =>
-          `<span class="skill-chip${s.installed ? "" : " is-missing"}" title="${s.installed ? "Installed" : "Not installed"}">${esc(s.name)}</span>`
-        ).join("")}</div>` : ""}
-      </section>
-      <div class="agents-stat-row">
-        <span class="agents-stat-pill"><strong>${(agents.specialists?.length || 5)}</strong> specialists</span>
-        <span class="agents-stat-pill">World <strong>${esc(activeWorldLabel())}</strong></span>
-        <span class="agents-stat-pill">${liveActive ? "<strong>Live</strong> run in progress" : "All idle"}</span>
+  const actions = state._agentActions || [];
+
+  return `<div class="agents-console">
+    <header class="console-toolbar driver-card">
+      <div class="console-kpis">
+        <div class="console-kpi"><span class="console-kpi__val">${agents.specialists?.length || 5}</span><span class="console-kpi__lbl">Specialists</span></div>
+        <div class="console-kpi"><span class="console-kpi__val">${busyCount || "0"}</span><span class="console-kpi__lbl">Active</span></div>
+        <div class="console-kpi"><span class="console-kpi__val">${runs.length}</span><span class="console-kpi__lbl">Runs</span></div>
+        <div class="console-kpi"><span class="console-kpi__val">${agents.total_tools || 0}</span><span class="console-kpi__lbl">Tools</span></div>
+        <div class="console-kpi"><span class="console-kpi__val">${pending}</span><span class="console-kpi__lbl">Approvals</span></div>
       </div>
-    </div>
-    <div class="agents-layout">
-      <div class="agents-main-panel">
-        ${renderLivePanel(live, "agents-live-panel")}
-        <section class="driver-card">
-          <ol class="agents-steps">
-            <li class="is-done">1 · Pick specialist</li>
-            <li class="${hasDraft ? "is-done" : "is-current"}">2 · Describe task</li>
-            <li class="${hasResult ? "is-current" : ""}">3 · Review result</li>
-          </ol>
-          <p class="caption-uppercase">Specialists</p>
-          <div style="margin-top:var(--space-xs)">${renderAgentCards(agents, live, true)}</div>
-        </section>
-        <section class="driver-card">
-          <p class="caption-uppercase">Runtime</p>
-          <p class="world-meta" style="margin-top:var(--space-xxs)">Live tool flow while an agent is working</p>
-          <div id="graph-runtime-agents" class="graph-canvas graph-canvas--compact" style="margin-top:var(--space-xs)"></div>
-        </section>
+      <div class="console-toolbar__actions">
+        <span class="badge-pill">${esc(activeWorldLabel())}</span>
+        ${skills.map(s => `<span class="skill-chip${s.installed ? "" : " is-missing"}">${esc(s.name)}</span>`).join("")}
+        <button type="button" class="button-outline-on-dark button-sm" data-goto="chat">Supervisor</button>
+        <button type="button" class="button-outline-on-dark button-sm" data-goto="approvals"${pending ? "" : " disabled"}>Approvals${pending ? ` (${pending})` : ""}</button>
       </div>
-      <aside class="delegate-panel delegate-panel--highlight">
-        <p class="caption-uppercase">Delegate to ${esc(meta.label)}</p>
-        <div class="agent-card-title-row" style="margin:var(--space-xs) 0">
-          ${agentAvatar(meta.id, meta.role)}
-          <div>
-            <h3 style="font-size:var(--text-md)">${esc(meta.label)}</h3>
-            ${meta.role ? agentRoleBadge(meta.role) : ""}
+    </header>
+
+    ${renderAgentCards(agents, live, true)}
+
+    <div class="agents-workspace">
+      <section class="task-composer driver-card">
+        <div class="task-composer__head">
+          <div class="agent-card-title-row">
+            ${agentAvatar(meta.id, meta.role)}
+            <div>
+              <h2 class="title-md">${esc(meta.label)}</h2>
+              <p class="world-meta">${esc((meta.brief || "").slice(0, 100))}</p>
+            </div>
           </div>
+          <span class="agent-status ${agentBusy(live, meta.id) ? "busy" : "ready"}">${agentBusy(live, meta.id) ? "Working" : "Idle"}</span>
         </div>
-        <p class="body-md" style="margin-bottom:var(--space-xs)">${esc((meta.brief || "").slice(0, 180))}</p>
-        <p class="caption-uppercase" style="margin-bottom:6px">Quick prompts</p>
-        ${delegateHintsHtml(meta.id)}
-        <div class="agent-delegate">
-          <textarea class="text-input-on-dark" id="delegate-selected" rows="4" placeholder="Coordination task for ${esc(meta.label)} — keep it focused">${esc(draft)}</textarea>
+        <textarea class="text-input-on-dark task-composer__input" id="delegate-selected" rows="3" placeholder="Task for ${esc(meta.label)}…">${esc(draft)}</textarea>
+        <div class="task-composer__foot">
           <button type="button" class="button-primary" id="delegate-selected-btn">Run ${esc(meta.label)}</button>
+          <span class="world-meta mono">${esc(activeWorldLabel())}</span>
         </div>
-        <pre class="delegate-result mono" id="delegate-result-selected" ${hasResult ? "" : "hidden"}>${esc(state._delegateResult || "")}</pre>
+        ${hasResult ? `<pre class="delegate-result mono" id="delegate-result-selected">${esc(state._delegateResult || "")}</pre>` : ""}
+      </section>
+
+      <aside class="agents-rail driver-card">
+        ${renderLivePanel(live, "agents-live-panel")}
+        <p class="caption-uppercase" style="margin-top:var(--space-sm)">Recent actions</p>
+        <div class="action-feed">${actions.slice(0, 8).map(a =>
+          `<div class="action-feed__item"><span class="mono">${esc(a.tool_name)}</span><span class="muted">${esc((a.created_at || "").slice(11, 16))}</span></div>`
+        ).join("") || "<p class='muted'>No actions yet</p>"}</div>
       </aside>
-    </div>`;
+    </div>
+
+    <section class="driver-card agents-panel">
+      <div class="workspace-tabs">
+        <button type="button" class="workspace-tab${tab === "runs" ? " is-active" : ""}" data-agents-tab="runs">Run history</button>
+        <button type="button" class="workspace-tab${tab === "live" ? " is-active" : ""}" data-agents-tab="live">Live runtime</button>
+        <button type="button" class="workspace-tab${tab === "tools" ? " is-active" : ""}" data-agents-tab="tools">Tools</button>
+        <button type="button" class="workspace-tab${tab === "crm" ? " is-active" : ""}" data-agents-tab="crm">CRM</button>
+        <button type="button" class="workspace-tab${tab === "vault" ? " is-active" : ""}" data-agents-tab="vault">Vault</button>
+      </div>
+      <div class="agents-tab-body">${renderAgentsTabPanel()}</div>
+    </section>
+  </div>`;
 }
 
 const WORLD_KINDS = {
@@ -867,7 +977,7 @@ function renderChat() {
 function renderApprovals() {
   const appr = state.approvals || [];
   if (!appr.length) {
-    return `<section class="driver-card"><p class="body-md">No pending approvals. Risky actions (send email, post to X, etc.) appear here for your decision.</p></section>`;
+    return `<section class="driver-card empty-state"><p class="title-sm">No pending approvals</p></section>`;
   }
   return `<section class="driver-card">${appr.map(a => `
     <div class="approval-block">
@@ -986,11 +1096,23 @@ function renderActivity() {
   </div>`;
 }
 
+function integrationCard(name, connected, detail) {
+  return `<div class="integration-card${connected ? " is-connected" : ""}">
+    <div class="integration-card__head">
+      <span class="title-sm">${esc(name)}</span>
+      <span class="integration-card__status">${connected ? "Connected" : "Not connected"}</span>
+    </div>
+    <p class="world-meta">${esc(detail)}</p>
+    <button type="button" class="button-outline-on-dark button-sm" disabled>${connected ? "Manage" : "Connect"}</button>
+  </div>`;
+}
+
 function renderSettings() {
   const c = state.config || {};
+  const integ = c.integrations || {};
   const pauseBtn = c.agent_paused
-    ? `<button type="button" class="button-primary" id="toggle-pause" style="margin-top:var(--space-sm)">Resume agent</button>`
-    : `<button type="button" class="button-outline-on-dark" id="toggle-pause" style="margin-top:var(--space-sm)">Pause agent</button>`;
+    ? `<button type="button" class="button-primary" id="toggle-pause">Resume agent</button>`
+    : `<button type="button" class="button-outline-on-dark" id="toggle-pause">Pause agent</button>`;
   return `<div class="dashboard-grid">
     <section class="driver-card span-4">
       <p class="caption-uppercase">Identity</p>
@@ -1017,8 +1139,16 @@ function renderSettings() {
       </dl>
     </section>
     <section class="driver-card span-12">
-      <p class="caption-uppercase">Configuration</p>
-      <p class="body-md" style="margin-top:var(--space-sm);max-width:52ch">Edit <code class="mono">.env</code> for API keys, autonomy, and integrations. Restart the app to apply changes.</p>
+      <p class="caption-uppercase">Integrations</p>
+      <div class="integration-grid" style="margin-top:var(--space-sm)">
+        ${integrationCard("Gmail", integ.gmail, "SMTP send + IMAP inbox via app password")}
+        ${integrationCard("Google Calendar", integ.calendar, "OAuth token in data/google_token.json")}
+        ${integrationCard("Qdrant", integ.qdrant, "Vector memory + knowledge vault")}
+        ${integrationCard("X / Twitter", integ.x, "Posting and monitoring API keys")}
+        ${integrationCard("Serper", integ.serper, "Web search")}
+        ${integrationCard("Tavily", integ.tavily, "Research search")}
+        ${integrationCard("GitHub", false, "Link repos in Worlds → Vault (OAuth coming)")}
+      </div>
     </section>
   </div>`;
 }
@@ -1029,7 +1159,27 @@ async function loadViewData(view) {
   if (view === "crm") state._crm = await api("/crm/contacts");
   if (view === "goals") state._goals = await api("/goals");
   if (view === "tools") state._tools = await api("/tools");
-  if (view === "agents") state._agents = await api("/agents");
+  if (view === "agents") {
+    const [ag, act, runs, crm, tools] = await Promise.all([
+      api("/agents"),
+      api("/activity").catch(() => ({})),
+      api("/agents/runs").catch(() => ({ runs: [], actions: [] })),
+      api("/crm/contacts").catch(() => ({})),
+      api("/tools").catch(() => ({})),
+    ]);
+    state._agents = ag;
+    state._activity = act;
+    state._agentRunsApi = runs.runs || [];
+    state._agentActions = runs.actions || act.actions || [];
+    state._crm = crm;
+    state._tools = tools;
+    const wid = currentWorldId();
+    if (wid && wid !== "root") {
+      state._worldVault = await api(`/worlds/${encodeURIComponent(wid)}/vault`).catch(() => ({}));
+    } else {
+      state._worldVault = {};
+    }
+  }
   if (view === "activity") state._activity = await api("/activity");
   if (view === "world") {
     state._worldFull = await api("/graph/world");
@@ -1084,6 +1234,7 @@ function render() {
   };
   $("#content").innerHTML = (fns[currentView] || renderDashboard)();
   document.querySelector(".content")?.classList.toggle("content--worlds", currentView === "world");
+  document.querySelector(".content")?.classList.toggle("content--wide", ["agents", "world", "activity"].includes(currentView));
   bindViewEvents();
   afterRender();
   if (currentView === "chat") {
@@ -1110,14 +1261,18 @@ function bindViewEvents() {
   $("#toggle-pause")?.addEventListener("click", togglePause);
   $$("[data-goto]").forEach(b => b.addEventListener("click", () => goView(b.dataset.goto)));
   $$("[data-select-agent]").forEach(b => b.addEventListener("click", () => selectAgent(b.dataset.selectAgent)));
-  $$("[data-delegate-hint]").forEach(b => b.addEventListener("click", () => {
-    const ta = $("#delegate-selected");
-    if (!ta) return;
-    ta.value = b.dataset.delegateHint || "";
-    state._delegateDraft = ta.value;
-    ta.focus();
+  $$("[data-agents-tab]").forEach(b => b.addEventListener("click", () => {
+    state.agentsTab = b.dataset.agentsTab;
+    localStorage.setItem("fos_agents_tab", state.agentsTab);
+    render();
+    drawGraphs();
+  }));
+  $$("[data-toggle-run]").forEach(b => b.addEventListener("click", () => {
+    const id = b.dataset.toggleRun;
+    state.expandedRunId = state.expandedRunId === id ? null : id;
     render();
   }));
+  $("#agents-vault-search")?.addEventListener("click", () => agentsVaultSearch());
   $("#delegate-selected-btn")?.addEventListener("click", () => delegateAgent(state.selectedAgent));
   $("#delegate-selected")?.addEventListener("input", e => { state._delegateDraft = e.target.value; });
   $$("[data-memory-tab]").forEach(b => b.addEventListener("click", () => {
@@ -1273,31 +1428,69 @@ function selectAgent(id) {
   render();
 }
 
+async function agentsVaultSearch() {
+  const q = $("#agents-vault-q")?.value?.trim();
+  state._agentsVaultQ = q;
+  const out = $("#agents-vault-results");
+  const wid = currentWorldId();
+  if (!q || !wid || wid === "root") return;
+  try {
+    const res = await api(`/vault/search?${new URLSearchParams({ q, world_id: wid })}`);
+    const text = (res.hits || []).map(h =>
+      `[${h.metadata?.domain || "?"}] ${h.metadata?.source || ""}\n${(h.text || "").slice(0, 240)}`
+    ).join("\n\n---\n\n") || "No hits.";
+    if (out) { out.textContent = text; out.hidden = false; }
+  } catch (e) {
+    if (out) { out.textContent = e.message; out.hidden = false; }
+  }
+}
+
 async function delegateAgent(id) {
   const ta = $("#delegate-selected");
   const task = (ta?.value || "").trim();
   if (!task) return;
   const btn = $("#delegate-selected-btn");
-  const out = $("#delegate-result-selected");
   const meta = selectedAgentMeta(state._agents || {});
+  const started = Date.now();
   if (btn) { btn.disabled = true; btn.textContent = "Running…"; }
   startLivePoll();
+  state.agentsTab = "live";
+  localStorage.setItem("fos_agents_tab", "live");
   try {
     const res = await api("/agents/delegate", {
       method: "POST",
       body: JSON.stringify({ specialist: id, task, world_id: currentWorldId() }),
     });
-    state._delegateResult = typeof res.result === "string" ? res.result : JSON.stringify(res, null, 2);
+    const result = typeof res.result === "string" ? res.result : JSON.stringify(res, null, 2);
+    state._delegateResult = result;
     state._delegateDraft = "";
-    if (out) { out.hidden = false; out.textContent = state._delegateResult; }
     if (ta) ta.value = "";
+    const runId = `local-${started}`;
+    persistAgentRun({
+      id: runId,
+      agent: id,
+      task,
+      result,
+      duration_s: Math.round((Date.now() - started) / 1000),
+      ts: Math.floor(started / 1000),
+      tools: [],
+      source: "local",
+    });
+    state.agentsTab = "runs";
+    localStorage.setItem("fos_agents_tab", "runs");
+    state.expandedRunId = runId;
   } catch (e) {
     state._delegateResult = "Error: " + e.message;
-    if (out) { out.hidden = false; out.textContent = state._delegateResult; }
   }
   if (btn) { btn.disabled = false; btn.textContent = `Run ${meta.label}`; }
+  try {
+    const runs = await api("/agents/runs");
+    state._agentRunsApi = runs.runs || [];
+    state._agentActions = runs.actions || [];
+  } catch (_) {}
   pollLive();
   render();
+  drawGraphs();
 }
 
 async function sendChat() {

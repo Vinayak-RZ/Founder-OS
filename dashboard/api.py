@@ -63,6 +63,14 @@ def _public_config():
         "telegram_enabled": config.telegram_enabled,
         "web_ui_enabled": config.web_ui_enabled,
         "dashboard_port": config.dashboard_port,
+        "integrations": {
+            "gmail": bool(config.gmail_address and config.gmail_app_password),
+            "calendar": os.path.isfile(config.google_token_path),
+            "qdrant": bool(config.qdrant_url),
+            "x": bool(config.x_bearer_token or config.x_api_key),
+            "serper": bool(config.serper_api_key),
+            "tavily": bool(config.tavily_api_key),
+        },
     }
 
 
@@ -225,6 +233,30 @@ def api_agents():
         "mission": "aggregator",
         "total_tools": len(registry.all_tools()),
         "live": live,
+    })
+
+
+@bp.route("/agents/runs")
+def api_agent_runs():
+    import agent.trace as trace
+    from agent import store
+    runs = []
+    for t in _safe(lambda: trace.recent_full(40), []):
+        actor = t.get("actor") or ""
+        if not actor.startswith("subagent:"):
+            continue
+        runs.append({
+            "id": t.get("id"),
+            "agent": actor.split(":", 1)[-1],
+            "task": t.get("message", ""),
+            "result": t.get("final", ""),
+            "duration_s": t.get("duration_s", 0),
+            "ts": t.get("ts"),
+            "tools": [e.get("name") for e in t.get("events", []) if e.get("name")],
+        })
+    return jsonify({
+        "runs": runs,
+        "actions": _safe(lambda: store.recent_actions(25), []),
     })
 
 

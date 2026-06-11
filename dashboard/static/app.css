@@ -316,6 +316,10 @@ body {
   max-width: 1360px;
 }
 
+.content.content--wide {
+  max-width: 1560px;
+}
+
 .muted { color: var(--color-body); }
 .mono { font-family: var(--font-mono); font-size: 13px; }
 
@@ -1252,6 +1256,411 @@ td {
   font-size: var(--text-xs);
   color: var(--color-muted);
   margin-top: var(--space-xxs);
+}
+
+/* ── Command header (dashboard) ─────────────────────────────────────────── */
+
+.command-header {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--space-sm);
+  margin-bottom: var(--space-md);
+  padding: var(--space-sm) var(--space-md);
+}
+
+.command-header__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-xxs);
+  align-items: center;
+}
+
+/* ── Agents console (production) ────────────────────────────────────────── */
+
+.agents-console {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+}
+
+.console-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: var(--space-sm) var(--space-md);
+}
+
+.console-kpis {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-md);
+}
+
+.console-kpi {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 64px;
+}
+
+.console-kpi__val {
+  font-family: var(--font-display);
+  font-size: 1.5rem;
+  font-weight: 700;
+  line-height: 1.1;
+  color: var(--color-ink);
+}
+
+.console-kpi__lbl {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--color-muted);
+}
+
+.console-toolbar__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-xxs);
+  align-items: center;
+}
+
+.fleet-rail {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: var(--space-xs);
+}
+
+@media (max-width: 1100px) {
+  .fleet-rail {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 640px) {
+  .fleet-rail {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.fleet-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  padding: var(--space-sm);
+  border: 1px solid var(--color-outline-variant);
+  border-radius: var(--rounded-lg);
+  background: var(--color-canvas-elevated);
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.12s ease;
+}
+
+.fleet-card:hover {
+  border-color: color-mix(in srgb, var(--color-secondary) 35%, transparent);
+}
+
+.fleet-card.is-selected {
+  border-color: var(--color-secondary);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-secondary) 14%, transparent);
+}
+
+.fleet-card.is-busy {
+  border-color: color-mix(in srgb, var(--color-primary) 50%, transparent);
+}
+
+.fleet-card__top {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  width: 100%;
+}
+
+.fleet-card__name {
+  font-family: var(--font-display);
+  font-size: var(--text-md);
+  font-weight: 700;
+  color: var(--color-ink);
+}
+
+.fleet-card__meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 10px;
+  color: var(--color-muted);
+  width: 100%;
+}
+
+.fleet-card__status {
+  width: 8px;
+  height: 8px;
+  border-radius: var(--rounded-full);
+  background: var(--color-semantic-success);
+  flex-shrink: 0;
+  margin-top: 4px;
+}
+
+.fleet-card__status.is-busy {
+  background: var(--color-primary);
+  animation: agent-pulse 1.4s ease-in-out infinite;
+}
+
+.agents-workspace {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) min(300px, 28%);
+  gap: var(--space-md);
+  align-items: start;
+}
+
+@media (max-width: 900px) {
+  .agents-workspace {
+    grid-template-columns: 1fr;
+  }
+}
+
+.task-composer {
+  padding: var(--space-md);
+}
+
+.task-composer__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: var(--space-sm);
+  margin-bottom: var(--space-sm);
+}
+
+.task-composer__input {
+  width: 100%;
+  min-height: 88px;
+  resize: vertical;
+}
+
+.task-composer__foot {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--space-sm);
+  margin-top: var(--space-xs);
+}
+
+.agents-rail {
+  padding: var(--space-sm);
+}
+
+.action-feed {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: var(--space-xxs);
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.action-feed__item {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-xs);
+  font-size: var(--text-xs);
+  padding: 6px 0;
+  border-bottom: 1px solid var(--color-hairline);
+}
+
+.workspace-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-bottom: var(--space-sm);
+  border-bottom: 1px solid var(--color-hairline);
+  padding-bottom: var(--space-xxs);
+}
+
+.workspace-tab {
+  padding: 10px 16px;
+  border: none;
+  background: transparent;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-muted);
+  cursor: pointer;
+  border-radius: var(--rounded-md) var(--rounded-md) 0 0;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+}
+
+.workspace-tab:hover {
+  color: var(--color-ink);
+  background: var(--color-surface-low);
+}
+
+.workspace-tab.is-active {
+  color: var(--color-secondary);
+  border-bottom-color: var(--color-secondary);
+  background: transparent;
+}
+
+.agents-panel {
+  padding: var(--space-md);
+}
+
+.agents-tab-body {
+  min-height: 200px;
+}
+
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-sm);
+}
+
+.data-table th {
+  text-align: left;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-muted);
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--color-hairline);
+}
+
+.data-table td {
+  padding: 12px;
+  border-bottom: 1px solid var(--color-hairline-soft);
+  vertical-align: top;
+}
+
+.data-table .task-cell {
+  max-width: 36ch;
+}
+
+.data-row:hover td {
+  background: var(--color-surface-low);
+}
+
+.data-row-detail td {
+  background: var(--color-surface-low);
+  padding: 0 12px 12px;
+}
+
+.run-result {
+  margin: 0;
+  padding: var(--space-sm);
+  background: var(--color-canvas);
+  border: 1px solid var(--color-hairline);
+  border-radius: var(--rounded-md);
+  font-size: 12px;
+  line-height: 1.45;
+  max-height: 280px;
+  overflow: auto;
+  white-space: pre-wrap;
+}
+
+.fleet-inline-badge {
+  display: inline-flex;
+  padding: 2px 8px;
+  border-radius: var(--rounded-full);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  background: color-mix(in srgb, var(--color-secondary) 8%, white);
+  color: var(--color-secondary);
+}
+
+.console-split {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-md);
+}
+
+@media (max-width: 768px) {
+  .console-split {
+    grid-template-columns: 1fr;
+  }
+}
+
+.kv-row {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-sm);
+  padding: 8px 0;
+  border-bottom: 1px solid var(--color-hairline);
+  font-size: var(--text-sm);
+}
+
+.kv-row .k { color: var(--color-muted); }
+.kv-row .v { font-weight: 600; color: var(--color-ink); }
+
+.tool-list-compact {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.tool-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: var(--rounded-full);
+  border: 1px solid var(--color-hairline);
+  font-size: 11px;
+  font-family: var(--font-mono);
+}
+
+.empty-state {
+  padding: var(--space-lg);
+  text-align: center;
+  color: var(--color-muted);
+}
+
+.integration-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: var(--space-sm);
+}
+
+.integration-card {
+  padding: var(--space-sm);
+  border: 1px solid var(--color-outline-variant);
+  border-radius: var(--rounded-lg);
+  background: var(--color-surface-low);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xxs);
+}
+
+.integration-card.is-connected {
+  border-color: color-mix(in srgb, var(--color-semantic-success) 40%, transparent);
+  background: color-mix(in srgb, var(--color-semantic-success) 4%, white);
+}
+
+.integration-card__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--space-xxs);
+}
+
+.integration-card__status {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-muted);
+}
+
+.integration-card.is-connected .integration-card__status {
+  color: var(--color-semantic-success);
 }
 
 /* ── Agent fleet (aggregator) ───────────────────────────────────────────── */
