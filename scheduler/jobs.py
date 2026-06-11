@@ -22,7 +22,21 @@ def set_bot(app):
 
 async def send_to_user(text: str):
     from config import config
-    if _bot_app and config.my_telegram_user_id:
+    from dashboard import notifications
+    title = "Founder OS"
+    if text.startswith("☀️"):
+        title = "Daily briefing"
+    elif text.startswith("🔔"):
+        title = "Follow-ups"
+    elif text.startswith("⏰"):
+        title = "Reminder"
+    elif text.startswith("🛰"):
+        title = "Proactive update"
+    elif text.startswith("📡"):
+        title = "Monitor alert"
+    notifications.push(title, text, kind="agent")
+
+    if _bot_app and config.telegram_enabled and config.my_telegram_user_id:
         try:
             await _bot_app.bot.send_message(
                 chat_id=config.my_telegram_user_id, text=text, parse_mode="Markdown"
@@ -37,7 +51,10 @@ async def send_to_user(text: str):
 async def send_voice_to_user(path: str, caption: str = "") -> bool:
     """Deliver a synthesized audio file as a Telegram voice message (or audio fallback)."""
     from config import config
-    if not (_bot_app and config.my_telegram_user_id):
+    from dashboard import notifications
+    notifications.push("Voice message", caption or "Audio from Founder OS", kind="media", meta={"path": path})
+
+    if not (_bot_app and config.telegram_enabled and config.my_telegram_user_id):
         return False
     chat = config.my_telegram_user_id
     cap = (caption[:1000] or None)
@@ -58,7 +75,10 @@ async def send_approval_to_user(approval_id: int, text: str) -> bool:
     """Surface a pending approval with one-tap Approve / Reject inline buttons."""
     from config import config
     from telegram import InlineKeyboardButton, InlineKeyboardMarkup
-    if not (_bot_app and config.my_telegram_user_id):
+    from dashboard import notifications
+    notifications.push("Approval needed", text, kind="approval", meta={"approval_id": approval_id})
+
+    if not (_bot_app and config.telegram_enabled and config.my_telegram_user_id):
         return False
     chat = config.my_telegram_user_id
     kb = InlineKeyboardMarkup([[
@@ -81,7 +101,10 @@ async def send_approval_to_user(approval_id: int, text: str) -> bool:
 async def send_photo_to_user(path: str, caption: str = "") -> bool:
     """Deliver an image (e.g. a rendered chart) to the founder on Telegram."""
     from config import config
-    if not (_bot_app and config.my_telegram_user_id):
+    from dashboard import notifications
+    notifications.push("Image", caption or path, kind="media", meta={"path": path})
+
+    if not (_bot_app and config.telegram_enabled and config.my_telegram_user_id):
         return False
     try:
         with open(path, "rb") as f:
@@ -96,7 +119,10 @@ async def send_photo_to_user(path: str, caption: str = "") -> bool:
 async def send_document_to_user(path: str, caption: str = "") -> bool:
     """Deliver a generated file to the founder on Telegram. Returns delivery success."""
     from config import config
-    if not (_bot_app and config.my_telegram_user_id):
+    from dashboard import notifications
+    notifications.push("Document", caption or path, kind="media", meta={"path": path})
+
+    if not (_bot_app and config.telegram_enabled and config.my_telegram_user_id):
         return False
     try:
         with open(path, "rb") as f:

@@ -14,6 +14,8 @@ os.environ.setdefault("MY_TELEGRAM_USER_ID", "123456")
 os.environ.setdefault("GROQ_API_KEY", "test-groq-key")
 os.environ.setdefault("QDRANT_URL", "https://test.qdrant.io")
 os.environ.setdefault("QDRANT_API_KEY", "test-qdrant-key")
+os.environ.setdefault("WEB_UI_ENABLED", "true")
+os.environ.setdefault("TELEGRAM_ENABLED", "false")
 
 _TEST_DB = os.path.join(tempfile.gettempdir(), "founder_os_test.db")
 if os.path.exists(_TEST_DB):

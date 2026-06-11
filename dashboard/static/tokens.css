@@ -1,0 +1,47 @@
+/* Tokens from DESIGN.md (Ferrari design system) */
+:root {
+  --color-primary: #da291c;
+  --color-primary-active: #b01e0a;
+  --color-primary-hover: #9d2211;
+  --color-ink: #ffffff;
+  --color-body: #969696;
+  --color-body-strong: #ffffff;
+  --color-body-on-light: #181818;
+  --color-muted: #666666;
+  --color-muted-soft: #8f8f8f;
+  --color-hairline: #303030;
+  --color-hairline-on-light: #d2d2d2;
+  --color-hairline-soft: #ebebeb;
+  --color-canvas: #181818;
+  --color-canvas-elevated: #303030;
+  --color-canvas-light: #ffffff;
+  --color-surface-card: #303030;
+  --color-surface-soft-light: #f7f7f7;
+  --color-on-primary: #ffffff;
+  --color-accent-yellow: #f6e500;
+  --color-semantic-info: #4c98b9;
+  --color-semantic-success: #03904a;
+  --color-semantic-warning: #f13a2c;
+
+  --font-sans: "Inter", -apple-system, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+
+  --rounded-none: 0px;
+  --rounded-sm: 4px;
+  --rounded-full: 9999px;
+
+  --space-xxxs: 4px;
+  --space-xxs: 8px;
+  --space-xs: 16px;
+  --space-sm: 24px;
+  --space-md: 32px;
+  --space-lg: 48px;
+  --space-xl: 64px;
+  --space-xxl: 96px;
+  --space-super: 128px;
+
+  --gradient-rosso: linear-gradient(180deg, #a00c01, #da291c 64%);
+  --gradient-dark: linear-gradient(180deg, #3c3c3c, #030303 64%);
+
+  --sidebar-w: 260px;
+}

@@ -1,0 +1,15 @@
+---
+description: Ferrari design system — read DESIGN.md before any UI work
+globs: dashboard/**/*
+alwaysApply: false
+---
+
+Before generating or changing any UI in this project, read `DESIGN.md` at the project root.
+
+Rules:
+- Use ONLY the colors and tokens defined in DESIGN.md (Rosso Corsa #da291c, canvas #181818, elevated #303030)
+- Sharp 0px corners on buttons and cards; uppercase CTAs with letter-spacing
+- Inter as FerrariSans substitute; display weight 500, never bold headlines
+- Match spacing from the 8px token ladder (4/8/16/24/32/48/64/96/128)
+- Rosso Corsa is scarce — primary CTAs and key accents only
+- No generic AI slop: no purple gradients, no pill buttons, no nested card grids

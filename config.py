@@ -25,7 +25,9 @@ class Config:
     heartbeat_hours: int
     autonomy_level: str          # cautious | balanced | autonomous
     voice_replies: bool          # speak responses back to voice messages
-    dashboard_enabled: bool      # serve the local web dashboard
+    web_ui_enabled: bool         # primary web UI (chat + full dashboard)
+    telegram_enabled: bool       # optional Telegram bot channel
+    dashboard_enabled: bool      # alias for web_ui_enabled (legacy)
     dashboard_port: int
     daily_llm_call_cap: int      # 0 = unlimited
     agent_paused: bool           # kill switch
@@ -53,12 +55,25 @@ class Config:
     qdrant_api_key: str
     qdrant_collection_prefix: str
 
+def _truthy(val: str, default: bool = False) -> bool:
+    if val is None or val == "":
+        return default
+    return val.strip().lower() in ("1", "true", "yes", "on")
+
+
 def load_config() -> Config:
     missing = []
-    if not os.getenv("TELEGRAM_BOT_TOKEN"):
-        missing.append("TELEGRAM_BOT_TOKEN")
-    if not os.getenv("MY_TELEGRAM_USER_ID"):
-        missing.append("MY_TELEGRAM_USER_ID")
+    web_ui_enabled = _truthy(os.getenv("WEB_UI_ENABLED"), default=True)
+    telegram_enabled = _truthy(os.getenv("TELEGRAM_ENABLED"), default=False)
+
+    if telegram_enabled:
+        if not os.getenv("TELEGRAM_BOT_TOKEN"):
+            missing.append("TELEGRAM_BOT_TOKEN")
+        if not os.getenv("MY_TELEGRAM_USER_ID"):
+            missing.append("MY_TELEGRAM_USER_ID")
+
+    if not web_ui_enabled and not telegram_enabled:
+        missing.append("at least one of WEB_UI_ENABLED or TELEGRAM_ENABLED must be true")
 
     # At least one LLM provider key is required. Any one is enough — the router
     # falls back across whatever is configured (Groq -> Gemini -> OpenAI).
@@ -86,7 +101,7 @@ def load_config() -> Config:
         openai_api_key=os.getenv("OPENAI_API_KEY", ""),
         gmail_address=os.getenv("GMAIL_ADDRESS", ""),
         gmail_app_password=os.getenv("GMAIL_APP_PASSWORD", ""),
-        my_telegram_user_id=int(os.getenv("MY_TELEGRAM_USER_ID", "0")),
+        my_telegram_user_id=int(os.getenv("MY_TELEGRAM_USER_ID") or "0"),
         public_access=os.getenv("PUBLIC_ACCESS", "false").strip().lower() in ("1", "true", "yes", "on"),
         serper_api_key=os.getenv("SERPER_API_KEY", ""),
         tavily_api_key=os.getenv("TAVILY_API_KEY", ""),
@@ -98,7 +113,9 @@ def load_config() -> Config:
         heartbeat_hours=int(os.getenv("HEARTBEAT_HOURS", "4") or "4"),
         autonomy_level=os.getenv("AUTONOMY_LEVEL", "balanced").strip().lower(),
         voice_replies=os.getenv("VOICE_REPLIES", "true").strip().lower() in ("1", "true", "yes", "on"),
-        dashboard_enabled=os.getenv("DASHBOARD_ENABLED", "true").strip().lower() in ("1", "true", "yes", "on"),
+        web_ui_enabled=web_ui_enabled,
+        telegram_enabled=telegram_enabled,
+        dashboard_enabled=web_ui_enabled or _truthy(os.getenv("DASHBOARD_ENABLED"), default=True),
         dashboard_port=int(os.getenv("DASHBOARD_PORT", "8787") or "8787"),
         daily_llm_call_cap=int(os.getenv("DAILY_LLM_CALL_CAP", "0") or "0"),
         agent_paused=os.getenv("AGENT_PAUSED", "false").strip().lower() in ("1", "true", "yes", "on"),

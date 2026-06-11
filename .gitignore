@@ -1,5 +1,9 @@
 .env
 data/
+
+# Graphify (local knowledge-graph tooling; regenerate with `graphify update .`)
+graphify-out/
+.cursor/rules/graphify.mdc
 __pycache__/
 *.pyc
 *.pyo

@@ -1,0 +1,315 @@
+/* Components from DESIGN.md */
+
+/* top-nav-on-dark */
+.top-nav-on-dark {
+  background: var(--color-canvas);
+  color: var(--color-ink);
+  min-height: 64px;
+  border-right: 1px solid var(--color-hairline);
+}
+
+.nav-link {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.4;
+  letter-spacing: 0.65px;
+  text-transform: uppercase;
+  color: var(--color-body);
+  background: transparent;
+  border: none;
+  border-radius: var(--rounded-none);
+  padding: 12px 14px;
+  min-height: 48px;
+  width: 100%;
+  text-align: left;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-xxs);
+}
+
+.nav-link:hover {
+  background: var(--color-canvas-elevated);
+  color: var(--color-ink);
+}
+
+.nav-link.is-active {
+  background: var(--color-canvas-elevated);
+  color: var(--color-ink);
+}
+
+/* button-primary */
+.button-primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 48px;
+  padding: 14px 32px;
+  border: none;
+  border-radius: var(--rounded-none);
+  background: var(--color-primary);
+  color: var(--color-on-primary);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: 1.4px;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.button-primary:active {
+  background: var(--color-primary-active);
+}
+
+.button-primary:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* button-outline-on-dark */
+.button-outline-on-dark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 48px;
+  padding: 13px 31px;
+  border: 1px solid var(--color-ink);
+  border-radius: var(--rounded-none);
+  background: transparent;
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: 1.4px;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.button-outline-on-dark:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.button-sm {
+  min-height: 40px;
+  padding: 10px 20px;
+  font-size: 11px;
+  letter-spacing: 1.1px;
+}
+
+/* hero-band-cinema */
+.hero-band-cinema {
+  position: relative;
+  background: var(--color-canvas);
+  color: var(--color-ink);
+  padding: var(--space-xl) var(--space-xl) var(--space-lg);
+  margin: calc(-1 * var(--space-xl)) calc(-1 * var(--space-xl)) var(--space-md);
+  min-height: 200px;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  overflow: hidden;
+}
+
+.hero-band-cinema::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: var(--gradient-dark);
+  opacity: 0.85;
+  pointer-events: none;
+}
+
+.hero-band-cinema::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(0deg, var(--color-canvas) 0%, transparent 55%);
+  pointer-events: none;
+}
+
+.hero-band-cinema > * {
+  position: relative;
+  z-index: 1;
+}
+
+.hero-band-cinema h2 {
+  font-size: clamp(32px, 5vw, 56px);
+  font-weight: 500;
+  line-height: 1.1;
+  letter-spacing: -1.12px;
+  text-wrap: balance;
+  max-width: 14ch;
+}
+
+.hero-band-cinema p {
+  margin-top: var(--space-xs);
+  font-size: 14px;
+  color: var(--color-body);
+  max-width: 52ch;
+}
+
+/* driver-card */
+.driver-card {
+  background: var(--color-canvas-elevated);
+  color: var(--color-ink);
+  border-radius: var(--rounded-none);
+  border: 1px solid var(--color-hairline);
+  padding: var(--space-sm);
+}
+
+/* livery-band */
+.livery-band {
+  background: var(--gradient-rosso);
+  color: var(--color-ink);
+  padding: var(--space-md) var(--space-sm);
+  border-radius: var(--rounded-none);
+}
+
+.livery-band .caption-uppercase {
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.livery-band .display-lg {
+  margin-top: var(--space-xxs);
+}
+
+/* spec-cell */
+.spec-cell dt {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 1.1px;
+  text-transform: uppercase;
+  color: var(--color-muted);
+  margin-bottom: var(--space-xxs);
+}
+
+.spec-cell dd {
+  font-size: 26px;
+  font-weight: 500;
+  line-height: 1.2;
+  letter-spacing: 0.195px;
+  color: var(--color-ink);
+}
+
+.spec-cell dd.small {
+  font-size: 18px;
+  font-weight: 500;
+}
+
+/* race-position-cell — Rosso Corsa for F1-style highlights only */
+.spec-cell.race-position-cell dd,
+.race-position-cell dd {
+  color: var(--color-primary);
+}
+
+/* badge-pill */
+.badge-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px 12px;
+  border-radius: var(--rounded-full);
+  background: var(--color-canvas-elevated);
+  color: var(--color-ink);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 1.1px;
+  text-transform: uppercase;
+  line-height: 1.4;
+}
+
+.badge-pill--alert {
+  background: var(--color-primary);
+  color: var(--color-on-primary);
+}
+
+/* text-input-on-dark */
+.text-input-on-dark {
+  background: var(--color-canvas);
+  color: var(--color-ink);
+  border: 1px solid var(--color-hairline);
+  border-radius: var(--rounded-sm);
+  padding: 14px 16px;
+  min-height: 48px;
+  font-family: var(--font-sans);
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 1.5;
+  width: 100%;
+}
+
+.text-input-on-dark::placeholder {
+  color: var(--color-muted);
+}
+
+.text-input-on-dark:focus {
+  outline: none;
+  border-color: var(--color-accent-yellow);
+  box-shadow: 0 0 0 1px var(--color-accent-yellow);
+}
+
+/* canvas-light band (editorial contexts: tables, listings) */
+.band-light {
+  background: var(--color-canvas-light);
+  color: var(--color-body-on-light);
+  padding: var(--space-md);
+  border-radius: var(--rounded-none);
+}
+
+.band-light th {
+  color: var(--color-muted);
+  background: var(--color-surface-soft-light);
+}
+
+.band-light td {
+  color: var(--color-body-on-light);
+  border-color: var(--color-hairline-on-light);
+}
+
+.band-light .muted {
+  color: var(--color-muted);
+}
+
+/* Typography utilities */
+.caption-uppercase {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 1.1px;
+  text-transform: uppercase;
+  color: var(--color-muted);
+}
+
+.display-md {
+  font-size: 26px;
+  font-weight: 500;
+  line-height: 1.5;
+  letter-spacing: 0.195px;
+  color: var(--color-ink);
+}
+
+.display-lg {
+  font-size: 36px;
+  font-weight: 500;
+  line-height: 1.2;
+  letter-spacing: -0.36px;
+  color: var(--color-ink);
+}
+
+.body-md {
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 1.5;
+  color: var(--color-body);
+}
+
+.body-sm {
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 1.5;
+  color: var(--color-body);
+}
