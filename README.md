@@ -6,102 +6,110 @@
   extend it. It is intentionally exhaustive.
 -->
 
-# Founder OS — A Self-Evolving Autonomous AI Cofounder
+# Founder OS — Personal Command Console & Aggregator Hub
 
-> A local-first, free-tier, **agentic AI chief-of-staff** that lives in your Telegram.
-> It plans, researches, drafts and sends outreach, manages your CRM, sets reminders,
-> books calendar events, drafts social posts, watches the web and your inbox, learns
-> from how you work, writes its own tools, runs specialist sub-agents, and proactively
-> looks after your goals — all behind a human approval gate for anything risky.
+> A **personal, web-first platform** for running the many parallel threads of founder life —
+> Stamped Energy, side projects, research ideas, outreach, CRM, goals, and linked
+> documentation — in one place. **Deep work stays elsewhere** (Cursor, Claude, your repos);
+> Founder OS **coordinates**, **tracks**, **ingests** what you produce, and lets you **query**
+> it through a small specialist fleet and a per-project knowledge vault.
 
-Founder OS is not a chatbot. It is an **autonomous agent**: you tell it an outcome, and
-it decides which of its **76 tools** to call (retrieving only the relevant ones per turn
-via Tool-RAG), chains them, verifies its own work, and
-gets things done — then quietly improves itself for next time.
+Founder OS is **not** a replacement for extensive research or coding sessions. It is an
+**aggregator and operator console**: you tell it what to track or draft, it pulls from your
+worlds and vault, manages outreach with approval gates, and surfaces status across everything
+you care about — without trying to go deep on any single domain.
+
+**Primary interface:** the **web dashboard** (`http://127.0.0.1:8787` by default). Telegram
+is optional legacy (`TELEGRAM_ENABLED=false` by default).
+
+**Deployment target:** personal AWS stack — **EC2** for the app process and **S3** for vault
+artifacts, backups, and static exports (see [Deployment](#56-deployment-aws-target)).
 
 ---
 
 ## TL;DR — What makes this special
 
-- **True agentic loop** — not intent-routing. The model sees the full tool catalog and decides what to do (ReAct-style tool calling), with a **Plan → Execute → Verify** pipeline on top.
-- **Self-evolving** — it distills lessons, saves reusable skills, rewrites its own operating manual, and can even **author brand-new tools for itself** at runtime (Voyager-style), all behind approval.
-- **A real memory brain** — vector + relational + a **knowledge graph**, with **hybrid retrieval** (dense + BM25 + optional reranker), episodic recall weighted by recency/importance, and **nightly consolidation** ("sleep").
-- **Multi-agent** — a supervisor that **delegates** focused work to specialist sub-agents (researcher, outreach, ops, analyst), in parallel when useful.
-- **Perception** — reads your inbox (IMAP), renders JS-heavy web pages (headless browser), transcribes voice notes (local Whisper), parses PDFs/DOCX, and runs topic monitors.
-- **Safety-first autonomy** — an inviolable **constitution**, **prompt-injection defense**, **tiered autonomy** (cautious/balanced/autonomous), an **approval gate**, **spend caps**, and a **kill switch**.
-- **Observable** — a per-turn **flight recorder** (tracing), token/cost tracking, a **self-eval harness** with a tracked pass rate, and a **replay** tool.
-- **Local & free** — runs on your machine; the only cost is optional LLM API spend. Free providers (Groq, Gemini) are tried first, with an optional **fully-local Ollama** fallback and a **semantic cache** to cut cost.
+- **Aggregator, not deep workstation** — parallel **worlds** (root + sub-worlds per startup/idea), each with template facets (company, leads, industry, product, clients). Link doc repos, ingest, query via **Vault** — don't run multi-hour research here.
+- **Web-native control plane** — chat with the supervisor, delegate to specialists, approve risky actions, explore worlds/vault/CRM/runway in one SPA. Integrations (GitHub, Gmail, Calendar, LinkedIn, X) are moving from `.env` setup to **in-app Connect** (roadmap).
+- **Outreach stays core** — draft and send email (approval-gated), CRM pipeline, lead coordination, inbox reply tracking.
+- **Five aggregator specialists** — Pulse (status), Outreach, Leads, Market intel, Vault — not a fleet of deep researchers.
+- **Knowledge vault** — local folder tree under `data/knowledge/` (or `KNOWLEDGE_VAULT_ROOT`), domain-scoped vector collections, `link_repo` + ingest from GitHub doc clones.
+- **Agentic core** (unchanged engine) — ReAct tool loop, Plan → Execute → Verify, Tool-RAG over **76 tools**, hybrid memory + GraphRAG, self-evolution behind approval.
+- **Safety-first** — constitution, injection defense, tiered autonomy, approval gate, spend caps, kill switch.
+- **Observable** — per-turn tracing, cost tracking, eval harness, replay.
+- **Runs locally today; AWS tomorrow** — SQLite + Qdrant/Chroma on disk; EC2 + S3 layout documented for single-user production.
 
 ---
 
 ## Table of Contents
 
-1. [The vision: a virtual cofounder](#1-the-vision-a-virtual-cofounder)
+1. [The vision: personal aggregator hub](#1-the-vision-personal-aggregator-hub)
 2. [Advanced agentic-AI concepts → where they live](#2-advanced-agentic-ai-concepts--where-they-live)
 3. [System architecture (diagrams)](#3-system-architecture-diagrams)
 4. [The turn lifecycle](#4-the-turn-lifecycle)
-5. [Quickstart & setup](#5-quickstart--setup)
+5. [Quickstart & setup](#5-quickstart--setup) — includes [AWS deployment target](#56-deployment-aws-target)
 6. [Configuration reference (.env)](#6-configuration-reference-env)
-7. [The agentic core in depth](#7-the-agentic-core-in-depth)
-8. [The complete tool catalog (76 tools)](#8-the-complete-tool-catalog-76-tools)
-9. [The memory brain](#9-the-memory-brain)
-10. [Self-evolution](#10-self-evolution)
-11. [Multi-agent orchestration](#11-multi-agent-orchestration)
-12. [Perception layer](#12-perception-layer)
-13. [Safety, policy & control](#13-safety-policy--control)
-14. [Observability: tracing, cost, evals, replay](#14-observability-tracing-cost-evals-replay)
-15. [LLM routing, caching & local models](#15-llm-routing-caching--local-models)
-16. [Scheduler & proactive autonomy](#16-scheduler--proactive-autonomy)
-17. [Integrations](#17-integrations)
-18. [Specialists (domain workers)](#18-specialists-domain-workers)
-19. [Data model (every table)](#19-data-model-every-table)
-20. [Directory & file-by-file reference](#20-directory--file-by-file-reference)
-21. [Telegram interface](#21-telegram-interface)
-22. [Testing & verification](#22-testing--verification)
-23. [Usage cookbook (example prompts)](#23-usage-cookbook-example-prompts)
-24. [Extending Founder OS](#24-extending-founder-os)
-25. [Security & privacy](#25-security--privacy)
-26. [Cost model](#26-cost-model)
-27. [Roadmap & build history](#27-roadmap--build-history)
-28. [Troubleshooting / FAQ](#28-troubleshooting--faq)
-29. [Glossary of agentic-AI terms](#29-glossary-of-agentic-ai-terms)
+7–30. Agentic core, tools, memory, safety, integrations, data model, testing, cookbook, FAQ (section numbers unchanged in body).
+31. [Web dashboard (primary)](#31-web-dashboard-primary-interface) · [Telegram (optional)](#32-telegram-interface-optional)
 30. [Changelog](#30-changelog)
 
 ---
 
-## 1. The vision: a virtual cofounder
+## 1. The vision: personal aggregator hub
 
-Most "AI assistants" are reactive: you ask, they answer, the context evaporates. Founder OS
-is built to be the opposite — a **persistent, proactive teammate** that:
+Founder OS is a **single-user command console** for the many parallel aspects of founder
+life — not a generic chatbot and not a deep research IDE.
 
-- **Holds a model of your world.** It always knows your pipeline, your active goals, your
-  open projects, who's waiting on you, and what you've decided before. You never have to
-  re-explain context.
-- **Takes initiative.** A scheduled *heartbeat* reviews your goals and pending work and
-  surfaces something useful — or acts on it — without being asked.
-- **Acts, doesn't just talk.** It has real tools: it researches, drafts and sends email,
-  updates the CRM, books calendar events, sets reminders, drafts posts, reads your inbox.
-- **Gets better the more you use it.** Every substantive interaction can yield a lesson, a
-  skill, or an edit to its own operating manual — and it can write entirely new tools for
-  itself when it hits a recurring gap.
-- **Earns trust through control.** Everything irreversible is gated behind your explicit
-  approval; a constitution and policy layer constrain it; spend caps and a kill switch
-  keep it safe; and every action is traced so you can audit exactly what it did.
+### What it is
 
-The design north star: **an agent that acts in your interest, on your goals — not just on
-your last message.**
+| Layer | Role |
+|-------|------|
+| **Worlds** | One root world + sub-worlds per company, project, or research thread (e.g. Stamped Energy, a battery idea). Select the active world for chat and vault scope. |
+| **Knowledge vault** | Per-world folder tree (`data/knowledge/<slug>/`) with template facets (company, leads, industry, product, clients, …). Link a local Git clone of your docs repo → ingest → query with the **Vault** specialist or vault search in the UI. |
+| **Aggregator agents** | Five specialists — **Pulse**, **Outreach**, **Leads**, **Market intel**, **Vault** — coordinate status, outreach, and grounded Q&A. They summarize and route; they do not replace hours-long research sessions. |
+| **Outreach & CRM** | Pipeline, drafts, approval-gated sends, inbox reply tracking — the operational core that stays in Founder OS. |
+| **Web UI** | Primary surface: chat, agent fleet, worlds map, vault explorer, approvals, CRM, runway, activity. |
+
+### What it is not
+
+- **Not** where you run extensive market research, long-form analysis, or heavy coding — use **Cursor**, **Claude**, notebooks, and your Git repos for that.
+- **Not** a multi-tenant SaaS — built for **one operator** (you), with optional `PUBLIC_ACCESS` only if you explicitly open Telegram.
+- **Not** Telegram-first anymore — web is default; Telegram is opt-in via `TELEGRAM_ENABLED=true`.
+
+### Typical workflow
+
+1. **Deep work elsewhere** — research, write docs, commit to GitHub.
+2. **Link & ingest in Founder OS** — Worlds → select sub-world → paste clone path → **Link & ingest**.
+3. **Query & coordinate** — ask the Vault specialist *"What did we decide about ICP for industrial heat?"* or Pulse *"What's open across Stamped Energy this week?"*
+4. **Outreach in-app** — draft emails, approve sends, track CRM — without leaving the dashboard.
+
+### Worlds, vault & integrations (detail)
+
+**World templates** (`memory/world_templates.py`): `startup`, `technical`, `idea`, `research` — each defines facet folders and vault vector domains (`vault_company`, `vault_leads`, …).
+
+**Vault API** (`/api/worlds/<id>/vault`, `.../link-repo`, `.../ingest`, `/api/vault/search`) and agent tools (`query_vault`, `link_world_repo`, `ingest_vault_folder`).
+
+**Integrations — today vs roadmap**
+
+| Service | Today | Roadmap (web UI **Settings → Connect**) |
+|---------|--------|----------------------------------------|
+| **Gmail** | `GMAIL_ADDRESS` + app password in `.env`; IMAP read + SMTP send | OAuth connect in dashboard |
+| **Google Calendar** | OAuth via `scripts/google_auth.py` + credentials JSON | One-click connect in dashboard |
+| **GitHub** | `github_repo` on world + local `repo_path` for vault ingest | GitHub App / OAuth to pick repos and auto-sync |
+| **LinkedIn / X** | Draft tools; posting via API keys in `.env` | Activity feeds + connect in dashboard |
 
 ### Design principles
 
 | Principle | How it shows up |
 |-----------|-----------------|
-| **Local-first** | Runs on your machine; data lives in local SQLite + Chroma; no third-party agent platform. |
-| **Free by default** | Free LLM tiers (Groq, Gemini) first; optional local Ollama; semantic cache to avoid repeat spend. |
-| **Tools over prompts** | Capabilities are explicit, testable tools in a registry — not brittle prompt instructions. |
-| **Human-in-the-loop for risk** | Sending, posting, deleting, and self-coding are approval-gated by default. |
-| **Observability is not optional** | Every turn is traced; behavior is guarded by an eval suite; cost is tracked. |
-| **Graceful degradation** | Every optional dependency (browser, voice, calendar, X, reranker) is lazy-loaded; the bot boots without them. |
-| **The agent owns its growth** | It writes its own lessons, skills, instructions, and tools — within hard safety bounds. |
+| **Aggregator over depth** | Specialists coordinate and query ingested knowledge; deep work is external. |
+| **Web-first** | `WEB_UI_ENABLED=true` by default; full SPA at `DASHBOARD_PORT` (8787). |
+| **Personal platform** | Single operator; worlds partition life/work threads without multi-user complexity. |
+| **Local-first, AWS-ready** | SQLite + on-disk vault today; EC2 app + S3 artifacts documented for production. |
+| **Tools over prompts** | 76 registered tools; Tool-RAG selects relevant subset per turn. |
+| **Human-in-the-loop for risk** | Email send, posting, deletes, self-coding — approval-gated by default. |
+| **Observable** | Traces, cost tracking, eval harness, replay. |
+| **Graceful degradation** | Optional deps lazy-loaded; app boots with minimal config. |
 
 ---
 
@@ -357,8 +365,9 @@ Key constants (in `agent/core.py` / `agent/loop.py`): `MAX_STEPS = 8`, `HISTORY_
 ### Prerequisites
 
 - **Python 3.10+**
-- A **Telegram bot token** (from [@BotFather](https://t.me/BotFather)) and your **Telegram user ID** (from [@userinfobot](https://t.me/userinfobot)).
 - **At least one** LLM API key: Groq (free), Google Gemini (free), or OpenAI (paid). Any one works; more enables fallback.
+- **Qdrant** (local or cloud) for vault vector search — set `QDRANT_URL` / `QDRANT_API_KEY` in `.env`.
+- **Optional:** Telegram bot token + user ID — only if `TELEGRAM_ENABLED=true`.
 
 ### Install
 
@@ -406,11 +415,31 @@ When it boots you'll see:
 
 ```
 Starting Founder OS for <you> @ <company>
-[Scheduler] Started. Briefing 08:00, follow-ups 10:00, backup 02:00, consolidation 03:00, heartbeat every 4h (9-21).
-Bot is running. Send a message on Telegram to start.
+Web UI at http://127.0.0.1:8787
+Running in web-only mode. Open the Web UI in your browser.
 ```
 
-Send `/start` to your bot. You're live.
+Open the URL in your browser. Use the top bar to pick a **world**, chat with **Pulse** or another specialist, and explore **Worlds** → vault panel to link your first docs repo.
+
+### 5.6 Deployment (AWS target)
+
+Planned production layout for a **single-user** deployment:
+
+| Component | AWS service | Purpose |
+|-----------|-------------|---------|
+| App process | **EC2** (e.g. `t3.small`) | Flask dashboard + agent loop + scheduler; Docker or `systemd` |
+| Vault files & backups | **S3** bucket | Sync `data/knowledge/`, nightly brain backups, exported PDFs |
+| Secrets | **SSM Parameter Store** or `.env` on instance | API keys, Gmail app password, Qdrant credentials |
+| Vector DB | **Qdrant Cloud** (recommended) or self-hosted on EC2 | Vault domain collections |
+
+Suggested env on EC2:
+
+- `WEB_UI_ENABLED=true`, `TELEGRAM_ENABLED=false`
+- `KNOWLEDGE_VAULT_ROOT` → EBS volume path, with S3 sync cron for durability
+- Reverse proxy (nginx/Caddy) + TLS in front of `DASHBOARD_PORT`
+- Restrict security group to your IP only — this is a personal console, not a public multi-tenant app
+
+Local development stays the same: `python main.py` → `http://127.0.0.1:8787`.
 
 ### Optional capabilities (lazy-loaded — install only what you want)
 
@@ -827,15 +856,16 @@ The top-level agent is a **supervisor** (`agent/subagent.py`). For focused chunk
 hands off to specialist sub-agents, each running the *same* executor loop with a **narrowed
 toolset** and a role-specific brief:
 
-| Specialist | Tool categories | Brief |
-|---|---|---|
-| `researcher` | research, perception (+memory) | Gather accurate, well-sourced info; never invent facts. |
-| `outreach` | outreach, crm (+memory) | Draft sharp personalized messages; manage CRM; sending stays gated. |
-| `ops` | tasks, reminders, calendar, goals (+memory) | Scheduling, reminders, tasks, calendar, goals — confirm concrete times. |
-| `analyst` | research, evolution (+memory) | Reason over info + memory to produce judgments and recommendations. |
+| Specialist | Role | Tool categories | Brief |
+|---|---|---|---|
+| `pulse` | aggregator | tasks, reminders, crm, goals, meta | Cross-project status: tasks, CRM, goals, approvals, vault activity — no deep research. |
+| `outreach` | outreach | outreach, crm | Draft sharp messages; manage CRM; sending stays approval-gated. |
+| `leads` | leads | crm, outreach, research | Lead lists, who to contact next, CRM updates — not deep prospecting. |
+| `market` | research | research, memory | Query vault/graph for industry and competitor intel — summarize only. |
+| `vault` | knowledge | research, memory | Search linked project docs; grounded answers with citations; ingest/link repos. |
 
-- **`delegate`** — one handoff.
-- **`delegate_parallel`** — fan out several handoffs concurrently (`asyncio.gather`) — e.g. research three companies at once and compare.
+- **`delegate`** — one handoff to a specialist.
+- **`delegate_parallel`** — fan out several handoffs concurrently (`asyncio.gather`) — e.g. compare vault summaries across worlds.
 
 Sub-agents share the same memory brain, so everything they learn or write is centralized.
 
@@ -1190,31 +1220,39 @@ FOUDNER_OS/
 
 ---
 
-## 21. Telegram interface
+## 31. Web dashboard (primary interface)
 
-Only **your** `MY_TELEGRAM_USER_ID` is authorized (`bot/middleware.py`); everyone else is
-silently ignored — unless you set `PUBLIC_ACCESS=true`, which opens the bot to anyone (see the
-note in the Configuration section).
+The web UI (`dashboard/static/`, served by Flask on `DASHBOARD_PORT`) is the **main way to use Founder OS**.
 
-### Commands
+| Area | What you do |
+|------|-------------|
+| **Chat** | Talk to the supervisor or a selected specialist; live tool/status stream. |
+| **Agent fleet** | Pick Pulse, Outreach, Leads, Market intel, or Vault — each with a focused mission. |
+| **Worlds** | Tree + map of root/sub-worlds; inspector; **vault panel** (facets, link repo, ingest, search). |
+| **Approvals** | Approve or reject queued emails and other risky actions. |
+| **CRM / runway / activity** | Pipeline, financial snapshot, recent actions. |
+
+**World selector** (top bar) sets the active world for chat context and vault operations.
+
+**Connect integrations (roadmap):** a Settings screen will replace manual `.env` setup for Gmail, GitHub, Calendar, LinkedIn, and X. Until then, configure credentials in `.env` and use Worlds → **Link & ingest** for GitHub doc repos.
+
+Env flags: `WEB_UI_ENABLED=true` (default), `DASHBOARD_PORT=8787`, `DASHBOARD_HOST=127.0.0.1` (use `0.0.0.0` on EC2 behind TLS).
+
+---
+
+## 32. Telegram interface (optional)
+
+Legacy mobile channel. Set `TELEGRAM_ENABLED=true` and provide `TELEGRAM_BOT_TOKEN` + `MY_TELEGRAM_USER_ID`.
+
+Only **your** user ID is authorized (`bot/middleware.py`) unless `PUBLIC_ACCESS=true`.
 
 | Command | Action |
 |---|---|
 | `/start` | Intro + capability overview. |
 | `/approvals` | List pending approvals. |
-| `approve <id>` / `reject <id>` | Execute or cancel a queued risky action (handled without an LLM call). |
+| `approve <id>` / `reject <id>` | Execute or cancel a queued risky action. |
 
-### Message types
-
-| You send | Handler | Behavior |
-|---|---|---|
-| Text | `handle_message` | Runs through the full agentic loop. |
-| Photo | `handle_media` | Vision-describes the image, then acts. |
-| Document (PDF/DOCX/…) | `handle_media` | Extracts text, then acts. |
-| Voice / audio | `handle_voice` | Transcribes locally (Whisper), then acts. |
-
-Everything else is **natural language** — there are no rigid command formats. Just say what
-you want; the agent picks the tools.
+Message types: text, photo, document, voice — same agentic loop as the web chat.
 
 ---
 
@@ -1519,6 +1557,11 @@ Built incrementally, one commit per phase:
 | `feat: GraphRAG global queries` | Community detection (label propagation) over the knowledge graph + LLM-generated cluster summaries, map-reduced to answer big-picture questions about the founder's network via `ask_network`; rebuilt nightly. `memory/graphrag.py`. |
 | `feat: MCP server` | `mcp_server.py` exposes every tool over the Model Context Protocol so any MCP client (Claude Desktop, Cursor) can drive Founder OS — with approval-gated actions still routed through the Telegram approval queue, so external clients can propose but not unilaterally send. |
 | `feat: LLM-as-judge evals` | A rubric-based judge scores answer quality and safety (drafting, abstention, fraud refusal, approval-gate respect); opt-in CI gate (`RUN_LLM_EVALS=1`) guarding self-evolution, with the harness itself unit-tested offline. `evals/judge.py`, `evals/quality_runner.py`. |
+| `feat(UI): web-first dashboard` | SPA control plane; Telegram optional (`TELEGRAM_ENABLED=false` default). |
+| `feat: hierarchical worlds` | Root + sub-worlds, tree/map UI, per-world context. |
+| `feat(platform): aggregator hub` | World templates, knowledge vault, five aggregator specialists (Pulse, Outreach, Leads, Market, Vault). |
+| `feat(api): vault endpoints` | REST + agent tools for link-repo, ingest, search. |
+| `feat(ui): vault explorer` | Worlds vault panel, agent fleet hub, Stamped Energy design tokens. |
 
 ---
 
@@ -2451,10 +2494,9 @@ it comes from**, **how Founder OS implements it**, and **why it matters here**. 
 
 <div align="center">
 
-**Founder OS** — your autonomous, self-evolving AI cofounder.
-Built to act on your goals, not just your last message.
+**Founder OS** — your personal aggregator hub for parallel projects and founder life.
 
-*Runs locally · Free by default · Safe by design · Observable end-to-end*
+*Web-first · Deep work elsewhere · Query what you ingest · Outreach with approval · AWS-ready*
 
 </div>
 
