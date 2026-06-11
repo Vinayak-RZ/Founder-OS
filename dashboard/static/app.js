@@ -2,9 +2,17 @@
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
 
+function loadSelectedSpecialist() {
+  const stored = localStorage.getItem("fos_selected_specialist");
+  if (stored !== null) return stored;
+  const legacy = localStorage.getItem("fos_selected_agent");
+  if (legacy && legacy !== "supervisor") return legacy;
+  return "";
+}
+
 let state = {
   live: {},
-  selectedAgent: localStorage.getItem("fos_selected_agent") || "pulse",
+  selectedSpecialist: loadSelectedSpecialist(),
   activeWorldId: localStorage.getItem("fos_active_world") || "root",
   agentsTab: localStorage.getItem("fos_agents_tab") || "runs",
   expandedRunId: null,
@@ -81,55 +89,67 @@ function setActiveWorld(id) {
   populateWorldSelect();
 }
 
-function allFleetAgents(agents) {
+function supervisorMeta(agents) {
   const sup = agents?.supervisor || {};
-  const specs = (agents?.specialists || []).map(s => ({ ...s, label: s.label || s.id }));
-  return [
-    {
-      id: "supervisor",
-      label: "Supervisor",
-      role: "aggregator",
-      tool_count: agents?.total_tools,
-      brief: sup.role || "Orchestrates all specialists",
-    },
-    ...specs,
-  ];
+  return {
+    id: "supervisor",
+    label: "Supervisor",
+    role: "aggregator",
+    tool_count: agents?.total_tools,
+    brief: sup.role || "Orchestrates specialists — picks who to run when routing is Auto",
+  };
 }
 
-function currentAgentId() {
-  return $("#agent-select")?.value
-    || $("#agent-select-agents")?.value
-    || state.selectedAgent
-    || "pulse";
+function listSpecialists(agents) {
+  return (agents?.specialists || []).map(s => ({ ...s, label: s.label || s.id }));
 }
 
-function populateAgentSelect() {
-  const agents = allFleetAgents(state._agents || {});
-  const current = state.selectedAgent || "pulse";
-  const valid = agents.some(a => a.id === current) ? current : (agents[0]?.id || "pulse");
-  state.selectedAgent = valid;
+function currentSpecialistId() {
+  const raw = $("#specialist-select")?.value
+    ?? $("#specialist-select-agents")?.value
+    ?? state.selectedSpecialist
+    ?? "";
+  return raw === "auto" ? "" : (raw || "");
+}
 
-  const groups = [
-    { label: "Orchestrator", ids: ["supervisor"] },
-    { label: "Specialists", ids: agents.filter(a => a.id !== "supervisor").map(a => a.id) },
-  ];
-  let html = "";
-  for (const g of groups) {
-    const opts = agents.filter(a => g.ids.includes(a.id)).map(a =>
-      `<option value="${esc(a.id)}">${esc(a.label)}</option>`
-    ).join("");
-    if (opts) html += `<optgroup label="${esc(g.label)}">${opts}</optgroup>`;
-  }
-  if (!html) {
-    html = `<option value="pulse">Pulse</option>`;
-  }
+function isDirectSpecialist() {
+  return !!currentSpecialistId();
+}
 
-  ["#agent-select", "#agent-select-agents"].forEach(sel => {
+function populateSpecialistSelect() {
+  const specs = listSpecialists(state._agents || {});
+  let current = state.selectedSpecialist ?? "";
+  if (current && !specs.some(s => s.id === current)) current = "";
+  state.selectedSpecialist = current;
+
+  const specOpts = specs.map(s =>
+    `<option value="${esc(s.id)}">${esc(s.label)}</option>`
+  ).join("");
+  const html = `<option value="">Auto — supervisor decides</option>${specOpts}`;
+
+  ["#specialist-select", "#specialist-select-agents"].forEach(sel => {
     const el = $(sel);
     if (!el) return;
     el.innerHTML = html;
-    el.value = valid;
+    el.value = current;
   });
+}
+
+function routingLabel(agents) {
+  const specId = currentSpecialistId();
+  if (!specId) return "Supervisor · auto-route";
+  const spec = listSpecialists(agents || state._agents || {}).find(s => s.id === specId);
+  return `Supervisor → ${spec?.label || specId}`;
+}
+
+function routingMeta(agents) {
+  const pool = state._agents || agents || {};
+  const specId = currentSpecialistId();
+  if (specId) {
+    return listSpecialists(pool).find(s => s.id === specId)
+      || { id: specId, label: specId, role: "specialist" };
+  }
+  return supervisorMeta(pool);
 }
 
 function populateWorldSelect() {
@@ -233,12 +253,41 @@ function persistAgentRun(record) {
   localStorage.setItem("fos_agent_runs", JSON.stringify(rows.slice(0, 50)));
 }
 
+function renderFleetAutoCard(live) {
+  const isSel = !currentSpecialistId();
+  return `<button type="button" class="fleet-card fleet-card--auto${isSel ? " is-selected" : ""}" data-select-specialist="" aria-pressed="${isSel}">
+    ${isSel ? `<span class="fleet-card__active-label">Routing</span>` : ""}
+    <div class="fleet-card__top">
+      <span class="agent-avatar agent-avatar--aggregator" aria-hidden="true">AU</span>
+      <span class="fleet-card__status" title="Supervisor routes"></span>
+    </div>
+    <div class="fleet-card__name">Auto</div>
+    <span class="agent-role-badge agent-role--aggregator">Supervisor picks</span>
+    <div class="fleet-card__meta"><span>Default routing</span></div>
+  </button>`;
+}
+
+function renderSupervisorBanner(agents, live) {
+  const sup = supervisorMeta(agents);
+  const busy = agentBusy(live, "supervisor");
+  return `<div class="supervisor-banner driver-card">
+    <div class="agent-card-title-row">
+      ${agentAvatar("supervisor", sup.role)}
+      <div>
+        <h2 class="title-md">${esc(sup.label)} <span class="supervisor-main-tag">Main agent</span></h2>
+        <p class="world-meta">${esc((sup.brief || "").slice(0, 140))}</p>
+      </div>
+    </div>
+    <span class="agent-status ${busy ? "busy" : "ready"}">${busy ? "Working" : "Always on"}</span>
+  </div>`;
+}
+
 function renderFleetCard(a, live, sel, runs) {
   const isBusy = agentBusy(live, a.id);
   const isSel = sel === a.id;
   const last = lastRunForAgent(a.id, runs);
-  return `<button type="button" class="fleet-card${isBusy ? " is-busy" : ""}${isSel ? " is-selected" : ""}" data-select-agent="${esc(a.id)}" aria-pressed="${isSel}">
-    ${isSel ? `<span class="fleet-card__active-label">Active</span>` : ""}
+  return `<button type="button" class="fleet-card${isBusy ? " is-busy" : ""}${isSel ? " is-selected" : ""}" data-select-specialist="${esc(a.id)}" aria-pressed="${isSel}">
+    ${isSel ? `<span class="fleet-card__active-label">Direct</span>` : ""}
     <div class="fleet-card__top">
       ${agentAvatar(a.id, a.role)}
       <span class="fleet-card__status ${isBusy ? "is-busy" : ""}" title="${isBusy ? "Working" : "Idle"}"></span>
@@ -253,11 +302,11 @@ function renderFleetCard(a, live, sel, runs) {
 }
 
 function renderAgentCards(agents, live, selectable = false) {
-  const fleet = allFleetAgents(agents);
-  const sel = currentAgentId();
+  const specs = listSpecialists(agents);
+  const sel = currentSpecialistId();
   const runs = collectAgentRuns();
   if (!selectable) {
-    return `<div class="agent-grid">${fleet.filter(a => a.id !== "supervisor").map(a => {
+    return `<div class="agent-grid">${specs.map(a => {
       const card = { ...a, label: a.label || a.id };
       const busy = agentBusy(live, a.id);
       return `<article class="agent-card${busy ? " is-busy" : ""}">
@@ -265,7 +314,7 @@ function renderAgentCards(agents, live, selectable = false) {
       </article>`;
     }).join("")}</div>`;
   }
-  return `<div class="fleet-rail">${fleet.map(a =>
+  return `<div class="fleet-rail">${renderFleetAutoCard(live)}${specs.map(a =>
     renderFleetCard(a, live, sel, runs)
   ).join("")}</div>`;
 }
@@ -382,9 +431,7 @@ function renderAgentsTabPanel() {
 }
 
 function selectedAgentMeta(agents) {
-  const id = currentAgentId();
-  return allFleetAgents(agents || state._agents || {}).find(a => a.id === id)
-    || { id: "pulse", label: "Pulse", role: "aggregator" };
+  return routingMeta(agents);
 }
 
 function drawGraphs() {
@@ -597,7 +644,9 @@ function renderDashboard() {
 function renderAgents() {
   const agents = state._agents || {};
   const live = state.live || agents.live || {};
-  const meta = selectedAgentMeta(agents);
+  const meta = routingMeta(agents);
+  const routeLabel = routingLabel(agents);
+  const direct = isDirectSpecialist();
   const draft = state._delegateDraft || "";
   const runs = collectAgentRuns();
   const pending = (state.approvals || []).length;
@@ -619,16 +668,21 @@ function renderAgents() {
       <div class="console-toolbar__actions">
         <span class="badge-pill">${esc(activeWorldLabel())}</span>
         ${skills.map(s => `<span class="skill-chip${s.installed ? "" : " is-missing"}">${esc(s.name)}</span>`).join("")}
-        <button type="button" class="button-outline-on-dark button-sm" data-goto="chat">Supervisor</button>
+        <button type="button" class="button-outline-on-dark button-sm" data-goto="chat">Chat</button>
         <button type="button" class="button-outline-on-dark button-sm" data-goto="approvals"${pending ? "" : " disabled"}>Approvals${pending ? ` (${pending})` : ""}</button>
       </div>
     </header>
 
+    ${renderSupervisorBanner(agents, live)}
+
     <div class="agent-picker-bar driver-card">
-      <label class="world-select-wrap agent-picker-bar__select">
-        <span class="caption-uppercase">Active agent</span>
-        <select id="agent-select-agents" class="world-select agent-select" aria-label="Choose agent"></select>
-      </label>
+      <div class="agent-picker-bar__head">
+        <label class="world-select-wrap agent-picker-bar__select">
+          <span class="caption-uppercase">Specialist override</span>
+          <select id="specialist-select-agents" class="world-select agent-select" aria-label="Optional specialist"></select>
+        </label>
+        <span class="badge-pill agent-routing-badge">${esc(routeLabel)}</span>
+      </div>
       <div class="agent-picker-bar__cards">${renderAgentCards(agents, live, true)}</div>
     </div>
 
@@ -636,17 +690,17 @@ function renderAgents() {
       <section class="task-composer driver-card">
         <div class="task-composer__head">
           <div class="agent-card-title-row">
-            ${agentAvatar(meta.id, meta.role)}
+            ${agentAvatar(direct ? meta.id : "supervisor", direct ? meta.role : "aggregator")}
             <div>
-              <h2 class="title-md">${esc(meta.label)}</h2>
-              <p class="world-meta">${esc((meta.brief || "").slice(0, 100))}</p>
+              <h2 class="title-md">${direct ? esc(meta.label) : "Supervisor"}</h2>
+              <p class="world-meta">${direct ? esc((meta.brief || "").slice(0, 100)) : "Auto-route — supervisor will delegate to the best specialist"}</p>
             </div>
           </div>
-          <span class="agent-status ${agentBusy(live, meta.id) ? "busy" : "ready"}">${agentBusy(live, meta.id) ? "Working" : "Idle"}</span>
+          <span class="agent-status ${agentBusy(live, direct ? meta.id : "supervisor") ? "busy" : "ready"}">${esc(routeLabel)}</span>
         </div>
-        <textarea class="text-input-on-dark task-composer__input" id="delegate-selected" rows="3" placeholder="Task for ${esc(meta.label)}…">${esc(draft)}</textarea>
+        <textarea class="text-input-on-dark task-composer__input" id="delegate-selected" rows="3" placeholder="${direct ? `Task for ${esc(meta.label)}…` : "Message supervisor…"}">${esc(draft)}</textarea>
         <div class="task-composer__foot">
-          <button type="button" class="button-primary" id="delegate-selected-btn">Run ${esc(meta.label)}</button>
+          <button type="button" class="button-primary" id="delegate-selected-btn">${direct ? `Run ${esc(meta.label)}` : "Send to supervisor"}</button>
           <span class="world-meta mono">${esc(activeWorldLabel())}</span>
         </div>
         ${hasResult ? `<pre class="delegate-result mono" id="delegate-result-selected">${esc(state._delegateResult || "")}</pre>` : ""}
@@ -1009,21 +1063,24 @@ function isRootWorld(w) {
 }
 
 function renderChat() {
-  const meta = selectedAgentMeta(state._agents || {});
+  const agents = state._agents || {};
+  const meta = routingMeta(agents);
+  const routeLabel = routingLabel(agents);
+  const direct = isDirectSpecialist();
   const msgs = chatHistory.map(m =>
     `<div class="msg ${m.role}">${esc(m.text)}</div>`
   ).join("");
   const live = state.live || {};
-  const isSupervisor = meta.id === "supervisor";
   return `<div class="chat-layout">
     <div class="chat-wrap">
       <div class="chat-messages" id="chat-messages">${msgs || ""}</div>
       <div class="chat-input-row">
-        <textarea class="text-input-on-dark chat-input" id="chat-input" placeholder="${isSupervisor ? "Message supervisor…" : `Task for ${esc(meta.label)}…`}" rows="2"></textarea>
-        <button class="button-primary" id="chat-send">${isSupervisor ? "Send" : `Run ${esc(meta.label)}`}</button>
+        <textarea class="text-input-on-dark chat-input" id="chat-input" placeholder="${direct ? `Task for ${esc(meta.label)}…` : "Message supervisor…"}" rows="2"></textarea>
+        <button class="button-primary" id="chat-send">${direct ? `Run ${esc(meta.label)}` : "Send"}</button>
       </div>
       <div class="chat-toolbar">
-        <span class="badge-pill agent-active-badge">${esc(meta.label)}</span>
+        <span class="badge-pill supervisor-topbar-badge">Supervisor</span>
+        <span class="badge-pill agent-routing-badge">${esc(routeLabel)}</span>
         <span class="badge-pill">World: ${esc(activeWorldLabel())}</span>
         <label class="button-outline-on-dark button-sm upload-label">Upload<input type="file" id="chat-file" hidden accept=".pdf,.docx,.txt,.md,.csv,.json"></label>
         <button type="button" class="button-outline-on-dark button-sm" id="chat-clear">Clear</button>
@@ -1300,7 +1357,7 @@ function render() {
   $("#content").innerHTML = (fns[currentView] || renderDashboard)();
   document.querySelector(".content")?.classList.toggle("content--worlds", currentView === "world");
   document.querySelector(".content")?.classList.toggle("content--wide", ["agents", "world", "activity"].includes(currentView));
-  populateAgentSelect();
+  populateSpecialistSelect();
   bindViewEvents();
   afterRender();
   if (currentView === "chat") {
@@ -1326,8 +1383,8 @@ function bindViewEvents() {
   $("#memory-q")?.addEventListener("keydown", e => { if (e.key === "Enter") searchMemory(); });
   $("#toggle-pause")?.addEventListener("click", togglePause);
   $$("[data-goto]").forEach(b => b.addEventListener("click", () => goView(b.dataset.goto)));
-  $$("[data-select-agent]").forEach(b => b.addEventListener("click", () => selectAgent(b.dataset.selectAgent)));
-  $("#agent-select-agents")?.addEventListener("change", e => selectAgent(e.target.value));
+  $$("[data-select-specialist]").forEach(b => b.addEventListener("click", () => selectSpecialist(b.dataset.selectSpecialist || "")));
+  $("#specialist-select-agents")?.addEventListener("change", e => selectSpecialist(e.target.value));
   $$("[data-agents-tab]").forEach(b => b.addEventListener("click", () => {
     state.agentsTab = b.dataset.agentsTab;
     localStorage.setItem("fos_agents_tab", state.agentsTab);
@@ -1340,7 +1397,7 @@ function bindViewEvents() {
     render();
   }));
   $("#agents-vault-search")?.addEventListener("click", () => agentsVaultSearch());
-  $("#delegate-selected-btn")?.addEventListener("click", () => delegateAgent(state.selectedAgent));
+  $("#delegate-selected-btn")?.addEventListener("click", () => delegateAgent());
   $("#delegate-selected")?.addEventListener("input", e => { state._delegateDraft = e.target.value; });
   $$("[data-memory-tab]").forEach(b => b.addEventListener("click", () => {
     memoryGraphTab = b.dataset.memoryTab;
@@ -1489,11 +1546,11 @@ async function deleteWorld(id) {
   } catch (e) { alert(e.message); }
 }
 
-function selectAgent(id) {
-  if (!id) return;
-  state.selectedAgent = id;
-  localStorage.setItem("fos_selected_agent", id);
-  populateAgentSelect();
+function selectSpecialist(id) {
+  const value = id || "";
+  state.selectedSpecialist = value;
+  localStorage.setItem("fos_selected_specialist", value);
+  populateSpecialistSelect();
   render();
 }
 
@@ -1514,13 +1571,14 @@ async function agentsVaultSearch() {
   }
 }
 
-async function delegateAgent(id) {
-  const agentId = id || currentAgentId();
+async function delegateAgent() {
+  const specId = currentSpecialistId();
   const ta = $("#delegate-selected");
   const task = (ta?.value || "").trim();
   if (!task) return;
   const btn = $("#delegate-selected-btn");
-  const meta = selectedAgentMeta(state._agents || {});
+  const meta = routingMeta(state._agents || {});
+  const direct = !!specId;
   const started = Date.now();
   if (btn) { btn.disabled = true; btn.textContent = "Running…"; }
   startLivePoll();
@@ -1528,7 +1586,7 @@ async function delegateAgent(id) {
   localStorage.setItem("fos_agents_tab", "live");
   try {
     let result;
-    if (agentId === "supervisor") {
+    if (!direct) {
       const res = await api("/chat", {
         method: "POST",
         body: JSON.stringify({ message: task, world_id: currentWorldId() }),
@@ -1541,7 +1599,7 @@ async function delegateAgent(id) {
     } else {
       const res = await api("/agents/delegate", {
         method: "POST",
-        body: JSON.stringify({ specialist: agentId, task, world_id: currentWorldId() }),
+        body: JSON.stringify({ specialist: specId, task, world_id: currentWorldId() }),
       });
       result = typeof res.result === "string" ? res.result : JSON.stringify(res, null, 2);
     }
@@ -1551,7 +1609,7 @@ async function delegateAgent(id) {
     const runId = `local-${started}`;
     persistAgentRun({
       id: runId,
-      agent: agentId,
+      agent: direct ? specId : "supervisor",
       task,
       result,
       duration_s: Math.round((Date.now() - started) / 1000),
@@ -1565,7 +1623,10 @@ async function delegateAgent(id) {
   } catch (e) {
     state._delegateResult = "Error: " + e.message;
   }
-  if (btn) { btn.disabled = false; btn.textContent = `Run ${meta.label}`; }
+  if (btn) {
+    btn.disabled = false;
+    btn.textContent = direct ? `Run ${meta.label}` : "Send to supervisor";
+  }
   try {
     const runs = await api("/agents/runs");
     state._agentRunsApi = runs.runs || [];
@@ -1580,21 +1641,21 @@ async function sendChat() {
   const input = $("#chat-input");
   const text = (input?.value || "").trim();
   if (!text) return;
-  const agentId = currentAgentId();
-  const meta = selectedAgentMeta(state._agents || {});
-  const isSupervisor = agentId === "supervisor";
+  const specId = currentSpecialistId();
+  const meta = routingMeta(state._agents || {});
+  const direct = !!specId;
   input.value = "";
   chatHistory.push({ role: "user", text });
   localStorage.setItem("fos_chat", JSON.stringify(chatHistory));
   render();
   animateLatestChatMessage();
   const btn = $("#chat-send");
-  const btnLabel = isSupervisor ? "Send" : `Run ${meta.label}`;
+  const btnLabel = direct ? `Run ${meta.label}` : "Send";
   if (btn) { btn.disabled = true; btn.textContent = "…"; }
   startLivePoll();
   const pollDuring = setInterval(pollLive, 800);
   try {
-    if (isSupervisor) {
+    if (!direct) {
       const res = await api("/chat", {
         method: "POST",
         body: JSON.stringify({ message: text, world_id: currentWorldId() }),
@@ -1607,13 +1668,13 @@ async function sendChat() {
     } else {
       const res = await api("/agents/delegate", {
         method: "POST",
-        body: JSON.stringify({ specialist: agentId, task: text, world_id: currentWorldId() }),
+        body: JSON.stringify({ specialist: specId, task: text, world_id: currentWorldId() }),
       });
       const reply = typeof res.result === "string" ? res.result : JSON.stringify(res, null, 2);
       chatHistory.push({ role: "agent", text: reply });
       persistAgentRun({
         id: `local-chat-${Date.now()}`,
-        agent: agentId,
+        agent: specId,
         task: text,
         result: reply,
         duration_s: 0,
@@ -1708,12 +1769,12 @@ function updateStatus() {
 
 async function refresh() {
   const prevWorld = state.activeWorldId;
-  const prevAgent = state.selectedAgent;
+  const prevSpec = state.selectedSpecialist;
   state = { ...state, ...(await api("/state")) };
   state.activeWorldId = prevWorld || state.activeWorldId || "root";
-  state.selectedAgent = prevAgent || state.selectedAgent || "pulse";
+  state.selectedSpecialist = prevSpec ?? state.selectedSpecialist ?? "";
   populateWorldSelect();
-  populateAgentSelect();
+  populateSpecialistSelect();
   updateBadges();
   updateStatus();
 }
@@ -1752,8 +1813,8 @@ $("#world-select")?.addEventListener("change", e => {
   if (currentView === "world" || currentView === "chat" || currentView === "agents") render();
 });
 
-$("#agent-select")?.addEventListener("change", e => {
-  selectAgent(e.target.value);
+$("#specialist-select")?.addEventListener("change", e => {
+  selectSpecialist(e.target.value);
 });
 
 FOSMotion?.init?.();
@@ -1763,7 +1824,7 @@ refresh().then(async () => {
   state._agents = await api("/agents").catch(() => ({}));
   state._world = await api("/world").catch(() => ({}));
   populateWorldSelect();
-  populateAgentSelect();
+  populateSpecialistSelect();
   await loadGraphData();
   render();
   startLivePoll();
