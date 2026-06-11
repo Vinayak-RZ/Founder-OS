@@ -4,7 +4,7 @@ const $$ = (s, el = document) => [...el.querySelectorAll(s)];
 
 let state = {
   live: {},
-  selectedAgent: localStorage.getItem("fos_selected_agent") || "researcher",
+  selectedAgent: localStorage.getItem("fos_selected_agent") || "pulse",
   activeWorldId: localStorage.getItem("fos_active_world") || "root",
 };
 let currentView = "dashboard";
@@ -128,12 +128,25 @@ function agentBusy(live, agentId) {
   return actor === `subagent:${agentId}` || actor.includes(agentId);
 }
 
+const AGENT_ROLES = {
+  aggregator: { label: "Aggregator", cls: "agent-role--aggregator" },
+  outreach: { label: "Outreach", cls: "agent-role--outreach" },
+  leads: { label: "Leads", cls: "agent-role--leads" },
+  research: { label: "Intel", cls: "agent-role--research" },
+  knowledge: { label: "Vault", cls: "agent-role--vault" },
+};
+
+function agentRoleBadge(role) {
+  const m = AGENT_ROLES[role] || { label: role || "Specialist", cls: "" };
+  return `<span class="agent-role-badge ${m.cls}">${esc(m.label)}</span>`;
+}
+
 function renderAgentCards(agents, live, selectable = false) {
   const sup = agents?.supervisor || {};
   const specs = agents?.specialists || [];
   const sel = state.selectedAgent;
   const cards = [
-    { id: "supervisor", label: "Supervisor", brief: sup.role || "Orchestrates specialists and approvals", tool_count: agents?.total_tools, categories: ["orchestration"], delegate: false },
+    { id: "supervisor", label: "Supervisor", role: "aggregator", brief: sup.role || "Orchestrates specialists", tool_count: agents?.total_tools, categories: ["orchestration"], delegate: false, skills: [] },
     ...specs.map(s => ({ ...s, label: s.label || s.id, delegate: true })),
   ];
   return `<div class="agent-grid">${cards.map(a => {
@@ -144,7 +157,9 @@ function renderAgentCards(agents, live, selectable = false) {
         <h3>${esc(a.label)}</h3>
         <span class="agent-status ${isBusy ? "busy" : "ready"}">${isBusy ? "Working" : "Ready"}</span>
       </div>
+      ${a.role ? agentRoleBadge(a.role) : ""}
       <p>${esc((a.brief || "").slice(0, 160))}</p>
+      ${(a.skills || []).length ? `<p class="agent-meta">Skills: ${esc(a.skills.join(", "))}</p>` : ""}
       <p class="agent-meta">${a.tool_count != null ? `${a.tool_count} tools` : ""}${a.categories ? ` · ${esc((a.categories || []).join(", "))}` : ""}</p>
       ${a.delegate && selectable ? `<p class="world-meta" style="margin-top:8px">${isSel ? "Selected for delegation" : "Click to select"}</p>` : ""}
       ${!a.delegate ? `<p class="world-meta" style="margin-top:8px">Use Chat to message</p>` : ""}`;
@@ -157,7 +172,7 @@ function renderAgentCards(agents, live, selectable = false) {
 
 function selectedAgentMeta(agents) {
   const specs = agents?.specialists || [];
-  return specs.find(s => s.id === state.selectedAgent) || specs[0] || { id: "researcher", label: "Researcher" };
+  return specs.find(s => s.id === state.selectedAgent) || specs[0] || { id: "pulse", label: "Pulse" };
 }
 
 function drawGraphs() {
@@ -364,8 +379,17 @@ function renderAgents() {
   const live = state.live || agents.live || {};
   const meta = selectedAgentMeta(agents);
   const draft = state._delegateDraft || "";
+  const skills = agents.skills || [];
   return `
-    <p class="body-md" style="max-width:60ch;margin-bottom:var(--space-md)">Select a specialist card, describe the task, and run. Each agent has its own tool loop — you will see tools light up in the graph while it works.</p>
+    <section class="aggregator-hero driver-card" style="margin-bottom:var(--space-md)">
+      <p class="section-eyebrow">Command aggregator</p>
+      <h2 class="hero-title" style="font-size:1.35rem;margin:var(--space-xxs) 0">Track parallel work — don't replace Cursor</h2>
+      <p class="body-md" style="max-width:62ch">Founder OS surfaces status across worlds, linked doc repos, CRM, and outreach. Deep research and coding stay in your other setups; use <strong>Pulse</strong> for what's happening, <strong>Vault</strong> to query docs, <strong>Outreach</strong> for sends.</p>
+      ${skills.length ? `<div class="skills-row">${skills.map(s =>
+        `<span class="skill-chip${s.installed ? "" : " is-missing"}">${esc(s.name)}</span>`
+      ).join("")}</div>` : ""}
+    </section>
+    <p class="body-md" style="max-width:60ch;margin-bottom:var(--space-md)">Select a specialist, describe a coordination task (not deep research), and run.</p>
     <div class="agents-layout">
       <div>
         ${renderLivePanel(live, "agents-live-panel")}
@@ -390,7 +414,9 @@ function renderAgents() {
 
 const WORLD_KINDS = {
   root: { label: "Main", cls: "world-kind--root" },
-  project: { label: "Project", cls: "world-kind--project" },
+  project: { label: "Startup", cls: "world-kind--project" },
+  startup: { label: "Startup", cls: "world-kind--project" },
+  technical: { label: "Technical", cls: "world-kind--research" },
   idea: { label: "Idea", cls: "world-kind--idea" },
   research: { label: "Research", cls: "world-kind--research" },
 };
@@ -419,13 +445,28 @@ function inspectorWorldId() {
   return state.inspectorWorldId || currentWorldId() || "root";
 }
 
+async function loadWorldVault(worldId) {
+  if (!worldId || worldId === "root") {
+    state._worldVault = null;
+    return;
+  }
+  try {
+    const res = await api(`/worlds/${encodeURIComponent(worldId)}/vault`);
+    state._worldVault = res.vault || null;
+  } catch (_) {
+    state._worldVault = null;
+  }
+}
+
 function selectInspectorWorld(id) {
   state.inspectorWorldId = id || "root";
   if (currentView === "world") {
     state._motionSkipOnce = true;
-    render();
-    FOSMotion?.flashElement?.($("#world-inspector"));
-    FOSGraph.highlightWorld("graph-world", inspectorWorldId(), currentWorldId());
+    loadWorldVault(id).then(() => {
+      render();
+      FOSMotion?.flashElement?.($("#world-inspector"));
+      FOSGraph.highlightWorld("graph-world", inspectorWorldId(), currentWorldId());
+    });
   }
 }
 
@@ -482,6 +523,7 @@ function renderWorldInspector(w, snap) {
               <option value="project"${w.kind === "project" ? " selected" : ""}>Project / startup</option>
               <option value="idea"${w.kind === "idea" ? " selected" : ""}>Idea</option>
               <option value="research"${w.kind === "research" ? " selected" : ""}>Research</option>
+              <option value="technical"${w.kind === "technical" ? " selected" : ""}>Technical project</option>
             </select>
           </label>` : `
           <label>Name<input class="text-input-on-dark" name="name" value="${esc(w.name || "")}"></label>`}
@@ -540,6 +582,13 @@ function renderWorldInspector(w, snap) {
           `<div class="world-inspector-fact"><span class="k">${esc(c.name)}</span><span class="v">${esc(c.kind || "project")}</span></div>`
         ).join("")}</div>
       </div>` : ""}
+    ${!isRoot ? `
+      <div class="world-inspector-section">
+        <h4>Template</h4>
+        <p class="body-md">${esc(w.template || kind)} — facet folders on disk under <code class="mono">data/knowledge/</code></p>
+        ${w.github_repo ? `<p class="world-meta">GitHub: ${esc(w.github_repo)}</p>` : ""}
+        ${w.repo_path ? `<p class="world-meta">Repo: ${esc(w.repo_path)}</p>` : ""}
+      </div>` : ""}
     ${!isRoot && worldTreeData().root ? `
       <div class="world-inspector-section">
         <h4>Parent</h4>
@@ -562,6 +611,45 @@ function renderWorldInspector(w, snap) {
     </div>`;
 }
 
+function renderWorldVaultPanel(w) {
+  if (!w || w.id === "root") return "";
+  const vault = state._worldVault || {};
+  const facets = vault.facets || [];
+  const counts = vault.domain_counts || {};
+  const cards = facets.map(f => `
+    <article class="vault-facet-card">
+      <div class="vault-facet-head">
+        <h4>${esc(f.label)}</h4>
+        <span class="world-meta">${esc(f.domain_label || f.domain)}</span>
+      </div>
+      <p class="world-meta">${esc(f.folder)}/ · ${f.file_count || 0} files · ${counts[f.domain] || 0} chunks indexed</p>
+      <ul class="vault-file-list">${(f.files || []).slice(0, 5).map(file =>
+        `<li class="mono">${esc(file.relative || file.name)}</li>`
+      ).join("") || "<li class='muted'>No docs yet</li>"}</ul>
+    </article>`).join("");
+  return `
+    <section class="driver-card vault-panel" style="margin-top:var(--space-md)">
+      <div class="vault-panel-head">
+        <div>
+          <p class="section-eyebrow">Knowledge vault</p>
+          <h3 class="title-sm">${esc(w.name)} documentation</h3>
+          <p class="world-meta">${esc(vault.vault_path || "")}${vault.repo_path ? ` · linked: ${esc(vault.repo_path)}` : ""}</p>
+        </div>
+        <div class="vault-panel-actions">
+          <input class="text-input-on-dark" id="vault-repo-path" placeholder="Local clone path (e.g. C:\\docs\\stamped-energy)" value="${esc(w.repo_path || "")}">
+          <button type="button" class="button-outline-on-dark button-sm" data-vault-link="${esc(w.id)}">Link &amp; ingest</button>
+          <button type="button" class="button-primary button-sm" data-vault-ingest="${esc(w.id)}">Re-ingest vault</button>
+        </div>
+      </div>
+      <div class="vault-search-row">
+        <input class="text-input-on-dark" id="vault-search-q" placeholder="Query this world's docs…">
+        <button type="button" class="button-outline-on-dark button-sm" data-vault-search="${esc(w.id)}">Search</button>
+      </div>
+      <pre class="vault-search-results mono" id="vault-search-results" hidden></pre>
+      <div class="vault-facet-grid">${cards || "<p class='body-md muted'>Loading vault…</p>"}</div>
+    </section>`;
+}
+
 function renderWorld() {
   const w = state._worldFull || {};
   const tree = w.worlds || state.worlds || {};
@@ -578,7 +666,7 @@ function renderWorld() {
       <section class="worlds-hero">
         <div class="worlds-hero-lead">
           <h2>${esc(founder)}'s world map</h2>
-          <p>One <strong>main world</strong> for cross-cutting context, plus focused <strong>sub-worlds</strong> per project or idea. Select a node to see what's inside; set active to scope chat and agents.</p>
+          <p><strong>Aggregator view</strong> — track parallel ventures, link doc repos per world, query the vault. Deep work stays in Cursor; Founder OS surfaces status and outreach.</p>
         </div>
         <div class="worlds-stat">
           <span class="n">${children.length + 1}</span>
@@ -632,21 +720,30 @@ function renderWorld() {
         </section>
       </div>
 
+      ${!isRootWorld(selected) ? renderWorldVaultPanel(selected) : ""}
+
       <details class="world-create-drawer">
         <summary>Create sub-world <span class="muted">+</span></summary>
         <form class="world-form" id="world-create-form">
-          <input class="text-input-on-dark" name="name" placeholder="Name — e.g. Stamped Energy research" required>
+          <input class="text-input-on-dark" name="name" placeholder="Name — e.g. Stamped Energy" required>
           <select class="text-input-on-dark" name="kind">
-            <option value="project">Project / startup</option>
+            <option value="project">Startup / venture</option>
+            <option value="technical">Technical project</option>
             <option value="idea">Idea</option>
-            <option value="research">Research</option>
+            <option value="research">Research track</option>
           </select>
+          <input class="text-input-on-dark" name="repo_path" placeholder="Optional: local docs repo path to link on create">
+          <input class="text-input-on-dark" name="github_repo" placeholder="Optional: GitHub repo (owner/name) for reference">
           <input class="text-input-on-dark" name="description" placeholder="Short description">
-          <textarea class="text-input-on-dark" name="context" rows="4" placeholder="What should the agent know in this world? Goals, constraints, stage, key people…"></textarea>
+          <textarea class="text-input-on-dark" name="context" rows="4" placeholder="What should the agent track in this world?"></textarea>
           <button type="submit" class="button-primary button-sm">Create world</button>
         </form>
       </details>
     </div>`;
+}
+
+function isRootWorld(w) {
+  return !w || w.id === "root";
 }
 
 function renderChat() {
@@ -845,6 +942,7 @@ async function loadViewData(view) {
     state._worldFull = await api("/graph/world");
     state._worldPreviews = state._worldFull?.world_previews || {};
     if (!state.inspectorWorldId) state.inspectorWorldId = currentWorldId();
+    await loadWorldVault(inspectorWorldId());
   }
   if (view === "memory") state._memoryFull = await api("/graph/memory");
   if (view === "dashboard") {
@@ -955,6 +1053,9 @@ function bindViewEvents() {
     render();
   }));
   $$("[data-delete-world]").forEach(b => b.addEventListener("click", () => deleteWorld(b.dataset.deleteWorld)));
+  $$("[data-vault-ingest]").forEach(b => b.addEventListener("click", () => vaultIngest(b.dataset.vaultIngest)));
+  $$("[data-vault-link]").forEach(b => b.addEventListener("click", () => vaultLinkRepo(b.dataset.vaultLink)));
+  $$("[data-vault-search]").forEach(b => b.addEventListener("click", () => vaultSearch(b.dataset.vaultSearch)));
 }
 
 async function createWorldFromForm(form) {
@@ -969,6 +1070,8 @@ async function createWorldFromForm(form) {
         kind: (fd.get("kind") || "project").toString(),
         description: (fd.get("description") || "").toString().trim(),
         context: (fd.get("context") || "").toString().trim(),
+        repo_path: (fd.get("repo_path") || "").toString().trim(),
+        github_repo: (fd.get("github_repo") || "").toString().trim(),
       }),
     });
     state.worlds = res.tree;
@@ -1007,6 +1110,44 @@ async function saveWorldEdit(form) {
       render();
     } else await refresh();
   } catch (e) { alert(e.message); }
+}
+
+async function vaultIngest(worldId) {
+  try {
+    const res = await api(`/worlds/${encodeURIComponent(worldId)}/vault/ingest`, { method: "POST", body: "{}" });
+    alert(`Ingested ${res.files || 0} files (${res.total_chunks || 0} chunks)`);
+    await loadWorldVault(worldId);
+    render();
+  } catch (e) { alert(e.message); }
+}
+
+async function vaultLinkRepo(worldId) {
+  const path = $("#vault-repo-path")?.value?.trim();
+  if (!path) return alert("Enter a local repo path");
+  try {
+    const res = await api(`/worlds/${encodeURIComponent(worldId)}/vault/link-repo`, {
+      method: "POST",
+      body: JSON.stringify({ repo_path: path }),
+    });
+    if (res.error) return alert(res.error);
+    alert(`Linked and ingested ${res.files || 0} files`);
+    await loadWorldVault(worldId);
+    await refresh();
+    render();
+  } catch (e) { alert(e.message); }
+}
+
+async function vaultSearch(worldId) {
+  const q = $("#vault-search-q")?.value?.trim();
+  if (!q) return;
+  const out = $("#vault-search-results");
+  try {
+    const res = await api(`/vault/search?${new URLSearchParams({ q, world_id: worldId })}`);
+    const text = (res.hits || []).map(h =>
+      `[${h.metadata?.domain || "?"}] ${h.metadata?.source || ""}\n${(h.text || "").slice(0, 200)}`
+    ).join("\n\n---\n\n") || "No hits.";
+    if (out) { out.textContent = text; out.hidden = false; }
+  } catch (e) { if (out) { out.textContent = e.message; out.hidden = false; } }
 }
 
 async function deleteWorld(id) {

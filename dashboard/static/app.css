@@ -1063,6 +1063,134 @@ td {
   margin-top: var(--space-xxs);
 }
 
+/* ── Agent fleet (aggregator) ───────────────────────────────────────────── */
+
+.aggregator-hero .skills-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-xxs);
+  margin-top: var(--space-sm);
+}
+
+.skill-chip {
+  display: inline-flex;
+  padding: 4px 10px;
+  border-radius: var(--rounded-full);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  border: 1px solid color-mix(in srgb, var(--color-primary) 30%, transparent);
+  background: color-mix(in srgb, var(--color-primary) 8%, transparent);
+  color: var(--color-primary);
+}
+
+.skill-chip.is-missing {
+  opacity: 0.5;
+  border-style: dashed;
+}
+
+.agent-role-badge {
+  display: inline-flex;
+  align-self: flex-start;
+  padding: 3px 8px;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  border-radius: var(--rounded-full);
+  border: 1px solid var(--color-outline-variant);
+}
+
+.agent-role--aggregator { border-color: var(--color-secondary); color: var(--color-secondary); }
+.agent-role--outreach { border-color: var(--color-primary); color: var(--color-primary); }
+.agent-role--leads { border-color: #c45a4a; color: #c45a4a; }
+.agent-role--research { border-color: var(--color-tertiary); color: var(--color-tertiary); }
+.agent-role--vault { border-color: var(--color-tertiary); background: color-mix(in srgb, var(--color-tertiary) 8%, transparent); }
+
+/* ── Knowledge vault panel ─────────────────────────────────────────────── */
+
+.vault-panel-head {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: var(--space-sm);
+  margin-bottom: var(--space-sm);
+}
+
+.vault-panel-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-xxs);
+  align-items: center;
+  min-width: min(100%, 420px);
+}
+
+.vault-panel-actions .text-input-on-dark {
+  flex: 1;
+  min-width: 200px;
+}
+
+.vault-search-row {
+  display: flex;
+  gap: var(--space-xxs);
+  margin-bottom: var(--space-sm);
+}
+
+.vault-search-row .text-input-on-dark { flex: 1; }
+
+.vault-search-results {
+  max-height: 160px;
+  overflow: auto;
+  padding: var(--space-xs);
+  margin-bottom: var(--space-sm);
+  background: var(--color-surface-low);
+  border: 1px solid var(--color-outline-variant);
+  border-radius: var(--rounded-md);
+  font-size: 11px;
+}
+
+.vault-facet-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: var(--space-sm);
+}
+
+.vault-facet-card {
+  border: 1px solid var(--color-outline-variant);
+  border-radius: var(--rounded-lg);
+  padding: var(--space-xs);
+  background: var(--color-canvas-elevated);
+}
+
+.vault-facet-head {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-xxs);
+  margin-bottom: var(--space-xxs);
+}
+
+.vault-facet-head h4 {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--color-on-surface);
+}
+
+.vault-file-list {
+  list-style: none;
+  margin-top: var(--space-xxs);
+  font-size: 10px;
+  color: var(--color-on-surface-variant);
+}
+
+.vault-file-list li {
+  padding: 4px 0;
+  border-top: 1px solid var(--color-outline-variant);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* ── Worlds workspace ───────────────────────────────────────────────────── */
 
 .content.content--worlds {
