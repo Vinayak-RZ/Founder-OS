@@ -129,11 +129,43 @@ function agentBusy(live, agentId) {
 }
 
 const AGENT_ROLES = {
-  aggregator: { label: "Aggregator", cls: "agent-role--aggregator" },
-  outreach: { label: "Outreach", cls: "agent-role--outreach" },
-  leads: { label: "Leads", cls: "agent-role--leads" },
-  research: { label: "Intel", cls: "agent-role--research" },
-  knowledge: { label: "Vault", cls: "agent-role--vault" },
+  aggregator: { label: "Aggregator", cls: "agent-role--aggregator", avatar: "agent-avatar--aggregator" },
+  outreach: { label: "Outreach", cls: "agent-role--outreach", avatar: "agent-avatar--outreach" },
+  leads: { label: "Leads", cls: "agent-role--leads", avatar: "agent-avatar--leads" },
+  research: { label: "Intel", cls: "agent-role--research", avatar: "agent-avatar--research" },
+  knowledge: { label: "Vault", cls: "agent-role--vault", avatar: "agent-avatar--knowledge" },
+};
+
+const AGENT_INITIALS = {
+  supervisor: "SV",
+  pulse: "PL",
+  outreach: "OR",
+  leads: "LD",
+  market: "MK",
+  vault: "VL",
+};
+
+const DELEGATE_HINTS = {
+  pulse: [
+    "Summarize what's open across CRM, tasks, and goals this week",
+    "What needs my attention in the active world?",
+  ],
+  outreach: [
+    "Draft a short follow-up email to my hottest CRM lead",
+    "Who should I reach out to next from the pipeline?",
+  ],
+  leads: [
+    "List prospects I haven't contacted in 14 days",
+    "Suggest 3 leads to prioritize for outreach today",
+  ],
+  market: [
+    "Summarize competitor positioning from the vault",
+    "What industry trends are in our linked docs?",
+  ],
+  vault: [
+    "What do our docs say about ICP and positioning?",
+    "Find product specs mentioned in the knowledge vault",
+  ],
 };
 
 function agentRoleBadge(role) {
@@ -141,33 +173,68 @@ function agentRoleBadge(role) {
   return `<span class="agent-role-badge ${m.cls}">${esc(m.label)}</span>`;
 }
 
+function agentAvatar(agentId, role) {
+  const m = AGENT_ROLES[role] || AGENT_ROLES.aggregator;
+  const initials = AGENT_INITIALS[agentId] || (agentId || "??").slice(0, 2).toUpperCase();
+  return `<span class="agent-avatar ${m.avatar || "agent-avatar--aggregator"}" aria-hidden="true">${esc(initials)}</span>`;
+}
+
+function renderAgentCardInner(a, live, selectable, sel) {
+  const isBusy = agentBusy(live, a.id);
+  const isSel = selectable && a.delegate && sel === a.id;
+  return `
+    <div class="agent-card-head">
+      <div class="agent-card-title-row">
+        ${agentAvatar(a.id, a.role)}
+        <div>
+          <h3>${esc(a.label)}</h3>
+          ${a.role ? agentRoleBadge(a.role) : ""}
+        </div>
+      </div>
+      <span class="agent-status ${isBusy ? "busy" : "ready"}">${isBusy ? "Working" : "Ready"}</span>
+    </div>
+    <p>${esc((a.brief || "").slice(0, 140))}</p>
+    ${(a.skills || []).length ? `<p class="agent-meta">Skills: ${esc(a.skills.join(", "))}</p>` : ""}
+    ${a.delegate && selectable
+      ? `<p class="world-meta">${isSel ? "Selected — describe task on the right" : "Click to delegate"}</p>`
+      : `<p class="world-meta">Open <strong>Chat</strong> to message the supervisor</p>`}`;
+}
+
 function renderAgentCards(agents, live, selectable = false) {
   const sup = agents?.supervisor || {};
   const specs = agents?.specialists || [];
   const sel = state.selectedAgent;
-  const cards = [
-    { id: "supervisor", label: "Supervisor", role: "aggregator", brief: sup.role || "Orchestrates specialists", tool_count: agents?.total_tools, categories: ["orchestration"], delegate: false, skills: [] },
-    ...specs.map(s => ({ ...s, label: s.label || s.id, delegate: true })),
-  ];
-  return `<div class="agent-grid">${cards.map(a => {
+  const supervisor = {
+    id: "supervisor",
+    label: "Supervisor",
+    role: "aggregator",
+    brief: sup.role || "Orchestrates specialists and routes your requests",
+    delegate: false,
+  };
+  const specialistCards = specs.map(s => ({ ...s, label: s.label || s.id, delegate: true }));
+
+  function cardHtml(a, extraCls = "") {
     const isBusy = agentBusy(live, a.id);
     const isSel = selectable && a.delegate && sel === a.id;
-    const inner = `
-      <div class="agent-card-head">
-        <h3>${esc(a.label)}</h3>
-        <span class="agent-status ${isBusy ? "busy" : "ready"}">${isBusy ? "Working" : "Ready"}</span>
-      </div>
-      ${a.role ? agentRoleBadge(a.role) : ""}
-      <p>${esc((a.brief || "").slice(0, 160))}</p>
-      ${(a.skills || []).length ? `<p class="agent-meta">Skills: ${esc(a.skills.join(", "))}</p>` : ""}
-      <p class="agent-meta">${a.tool_count != null ? `${a.tool_count} tools` : ""}${a.categories ? ` · ${esc((a.categories || []).join(", "))}` : ""}</p>
-      ${a.delegate && selectable ? `<p class="world-meta" style="margin-top:8px">${isSel ? "Selected for delegation" : "Click to select"}</p>` : ""}
-      ${!a.delegate ? `<p class="world-meta" style="margin-top:8px">Use Chat to message</p>` : ""}`;
+    const inner = renderAgentCardInner(a, live, selectable, sel);
+    const cls = `agent-card${extraCls}${isBusy ? " is-busy" : ""}${isSel ? " is-selected" : ""}`;
     if (selectable && a.delegate) {
-      return `<button type="button" class="agent-card agent-card-selectable${isBusy ? " is-busy" : ""}${isSel ? " is-selected" : ""}" data-select-agent="${esc(a.id)}">${inner}</button>`;
+      return `<button type="button" class="${cls} agent-card-selectable" data-select-agent="${esc(a.id)}">${inner}</button>`;
     }
-    return `<article class="agent-card${isBusy ? " is-busy" : ""}">${inner}</article>`;
-  }).join("")}</div>`;
+    return `<article class="${cls}">${inner}</article>`;
+  }
+
+  return `
+    <div class="agents-picker-supervisor">${cardHtml(supervisor, " agent-card--supervisor")}</div>
+    <div class="agent-grid agent-grid--specialists">${specialistCards.map(a => cardHtml(a)).join("")}</div>`;
+}
+
+function delegateHintsHtml(agentId) {
+  const hints = DELEGATE_HINTS[agentId] || [];
+  if (!hints.length) return "";
+  return `<div class="delegate-hints">${hints.map(h =>
+    `<button type="button" class="delegate-hint" data-delegate-hint="${esc(h)}">${esc(h)}</button>`
+  ).join("")}</div>`;
 }
 
 function selectedAgentMeta(agents) {
@@ -380,34 +447,60 @@ function renderAgents() {
   const meta = selectedAgentMeta(agents);
   const draft = state._delegateDraft || "";
   const skills = agents.skills || [];
+  const hasDraft = !!(draft || "").trim();
+  const hasResult = !!(state._delegateResult || "").trim();
+  const liveActive = !!live?.active;
   return `
-    <section class="aggregator-hero driver-card" style="margin-bottom:var(--space-md)">
-      <p class="section-eyebrow">Command aggregator</p>
-      <h2 class="hero-title" style="font-size:1.35rem;margin:var(--space-xxs) 0">Track parallel work — don't replace Cursor</h2>
-      <p class="body-md" style="max-width:62ch">Founder OS surfaces status across worlds, linked doc repos, CRM, and outreach. Deep research and coding stay in your other setups; use <strong>Pulse</strong> for what's happening, <strong>Vault</strong> to query docs, <strong>Outreach</strong> for sends.</p>
-      ${skills.length ? `<div class="skills-row">${skills.map(s =>
-        `<span class="skill-chip${s.installed ? "" : " is-missing"}">${esc(s.name)}</span>`
-      ).join("")}</div>` : ""}
-    </section>
-    <p class="body-md" style="max-width:60ch;margin-bottom:var(--space-md)">Select a specialist, describe a coordination task (not deep research), and run.</p>
-    <div class="agents-layout">
-      <div>
-        ${renderLivePanel(live, "agents-live-panel")}
-        <p class="caption-uppercase" style="margin-top:var(--space-md)">Select agent</p>
-        <div style="margin-top:var(--space-sm)">${renderAgentCards(agents, live, true)}</div>
-        <p class="caption-uppercase" style="margin-top:var(--space-md)">How it's running</p>
-        <div id="graph-runtime-agents" class="graph-canvas" style="margin-top:var(--space-xs)"></div>
+    <div class="agents-page-header">
+      <section class="aggregator-hero driver-card" style="flex:1;min-width:min(100%,320px);margin:0">
+        <p class="section-eyebrow">Agent fleet</p>
+        <h2 class="hero-title" style="font-size:1.25rem;margin:var(--space-xxs) 0">Coordinate — don't deep-dive here</h2>
+        <p class="body-md" style="max-width:58ch;margin:0">Pick a specialist, run a focused task on <strong>${esc(activeWorldLabel())}</strong>. Research and builds stay in Cursor; use <strong>Vault</strong> to query linked docs.</p>
+        ${skills.length ? `<div class="skills-row">${skills.map(s =>
+          `<span class="skill-chip${s.installed ? "" : " is-missing"}" title="${s.installed ? "Installed" : "Not installed"}">${esc(s.name)}</span>`
+        ).join("")}</div>` : ""}
+      </section>
+      <div class="agents-stat-row">
+        <span class="agents-stat-pill"><strong>${(agents.specialists?.length || 5)}</strong> specialists</span>
+        <span class="agents-stat-pill">World <strong>${esc(activeWorldLabel())}</strong></span>
+        <span class="agents-stat-pill">${liveActive ? "<strong>Live</strong> run in progress" : "All idle"}</span>
       </div>
-      <aside class="delegate-panel">
-        <p class="caption-uppercase">Delegate task</p>
-        <h3>${esc(meta.label)}</h3>
-        <p class="world-meta">World: ${esc(activeWorldLabel())}</p>
-        <p class="body-md" style="margin:var(--space-xxs) 0 var(--space-sm)">${esc((meta.brief || "").slice(0, 200))}</p>
+    </div>
+    <div class="agents-layout">
+      <div class="agents-main-panel">
+        ${renderLivePanel(live, "agents-live-panel")}
+        <section class="driver-card">
+          <ol class="agents-steps">
+            <li class="is-done">1 · Pick specialist</li>
+            <li class="${hasDraft ? "is-done" : "is-current"}">2 · Describe task</li>
+            <li class="${hasResult ? "is-current" : ""}">3 · Review result</li>
+          </ol>
+          <p class="caption-uppercase">Specialists</p>
+          <div style="margin-top:var(--space-xs)">${renderAgentCards(agents, live, true)}</div>
+        </section>
+        <section class="driver-card">
+          <p class="caption-uppercase">Runtime</p>
+          <p class="world-meta" style="margin-top:var(--space-xxs)">Live tool flow while an agent is working</p>
+          <div id="graph-runtime-agents" class="graph-canvas graph-canvas--compact" style="margin-top:var(--space-xs)"></div>
+        </section>
+      </div>
+      <aside class="delegate-panel delegate-panel--highlight">
+        <p class="caption-uppercase">Delegate to ${esc(meta.label)}</p>
+        <div class="agent-card-title-row" style="margin:var(--space-xs) 0">
+          ${agentAvatar(meta.id, meta.role)}
+          <div>
+            <h3 style="font-size:var(--text-md)">${esc(meta.label)}</h3>
+            ${meta.role ? agentRoleBadge(meta.role) : ""}
+          </div>
+        </div>
+        <p class="body-md" style="margin-bottom:var(--space-xs)">${esc((meta.brief || "").slice(0, 180))}</p>
+        <p class="caption-uppercase" style="margin-bottom:6px">Quick prompts</p>
+        ${delegateHintsHtml(meta.id)}
         <div class="agent-delegate">
-          <textarea class="text-input-on-dark" id="delegate-selected" placeholder="What should ${esc(meta.label)} do?">${esc(draft)}</textarea>
+          <textarea class="text-input-on-dark" id="delegate-selected" rows="4" placeholder="Coordination task for ${esc(meta.label)} — keep it focused">${esc(draft)}</textarea>
           <button type="button" class="button-primary" id="delegate-selected-btn">Run ${esc(meta.label)}</button>
         </div>
-        <pre class="delegate-result mono" id="delegate-result-selected" ${state._delegateResult ? "" : "hidden"}>${esc(state._delegateResult || "")}</pre>
+        <pre class="delegate-result mono" id="delegate-result-selected" ${hasResult ? "" : "hidden"}>${esc(state._delegateResult || "")}</pre>
       </aside>
     </div>`;
 }
@@ -1017,6 +1110,14 @@ function bindViewEvents() {
   $("#toggle-pause")?.addEventListener("click", togglePause);
   $$("[data-goto]").forEach(b => b.addEventListener("click", () => goView(b.dataset.goto)));
   $$("[data-select-agent]").forEach(b => b.addEventListener("click", () => selectAgent(b.dataset.selectAgent)));
+  $$("[data-delegate-hint]").forEach(b => b.addEventListener("click", () => {
+    const ta = $("#delegate-selected");
+    if (!ta) return;
+    ta.value = b.dataset.delegateHint || "";
+    state._delegateDraft = ta.value;
+    ta.focus();
+    render();
+  }));
   $("#delegate-selected-btn")?.addEventListener("click", () => delegateAgent(state.selectedAgent));
   $("#delegate-selected")?.addEventListener("input", e => { state._delegateDraft = e.target.value; });
   $$("[data-memory-tab]").forEach(b => b.addEventListener("click", () => {

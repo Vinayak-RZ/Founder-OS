@@ -23,17 +23,20 @@
         </div>
       </div>
       <nav class="nav" id="nav">
-        <button type="button" data-view="dashboard" class="nav-link is-active"><span>Command</span></button>
-        <button type="button" data-view="chat" class="nav-link"><span>Chat</span></button>
-        <button type="button" data-view="agents" class="nav-link"><span>Agents</span></button>
-        <button type="button" data-view="world" class="nav-link"><span>Worlds</span></button>
-        <button type="button" data-view="approvals" class="nav-link"><span>Approvals</span><span class="badge-pill badge-pill--alert" id="nav-approval-badge" hidden>0</span></button>
-        <button type="button" data-view="crm" class="nav-link"><span>CRM</span></button>
-        <button type="button" data-view="goals" class="nav-link"><span>Goals</span></button>
-        <button type="button" data-view="memory" class="nav-link"><span>Memory</span></button>
-        <button type="button" data-view="tools" class="nav-link"><span>Tools</span></button>
-        <button type="button" data-view="activity" class="nav-link"><span>Activity</span></button>
-        <button type="button" data-view="settings" class="nav-link"><span>Settings</span></button>
+        <p class="nav-section-label">Overview</p>
+        <button type="button" data-view="dashboard" class="nav-link is-active"><span class="nav-link__body"><span>Command</span></span></button>
+        <button type="button" data-view="chat" class="nav-link"><span class="nav-link__body"><span>Chat</span></span></button>
+        <button type="button" data-view="agents" class="nav-link"><span class="nav-link__body"><span>Agents</span></span></button>
+        <p class="nav-section-label">Workspace</p>
+        <button type="button" data-view="world" class="nav-link"><span class="nav-link__body"><span>Worlds</span></span></button>
+        <button type="button" data-view="crm" class="nav-link"><span class="nav-link__body"><span>CRM</span></span></button>
+        <button type="button" data-view="goals" class="nav-link"><span class="nav-link__body"><span>Goals</span></span></button>
+        <button type="button" data-view="memory" class="nav-link"><span class="nav-link__body"><span>Memory</span></span></button>
+        <p class="nav-section-label">System</p>
+        <button type="button" data-view="approvals" class="nav-link"><span class="nav-link__body"><span>Approvals</span></span><span class="badge-pill badge-pill--alert" id="nav-approval-badge" hidden>0</span></button>
+        <button type="button" data-view="tools" class="nav-link"><span class="nav-link__body"><span>Tools</span></span></button>
+        <button type="button" data-view="activity" class="nav-link"><span class="nav-link__body"><span>Activity</span></span></button>
+        <button type="button" data-view="settings" class="nav-link"><span class="nav-link__body"><span>Settings</span></span></button>
       </nav>
       <div class="sidebar-foot caption-uppercase">
         <span class="status-dot" id="status-dot" aria-hidden="true"></span>
@@ -82,6 +85,7 @@
   <script src="/static/charts.js"></script>
   <script src="/static/graph-viz.js"></script>
   <script src="/static/motion.js"></script>
+  <script src="/static/nav-icons.js"></script>
   <script src="/static/app.js"></script>
 </body>
 </html>
