@@ -15,7 +15,10 @@ from qdrant_client.http import models as qm
 
 logger = logging.getLogger(__name__)
 
-COLLECTIONS = ["conversations", "research", "notes", "outreach", "documents"]
+COLLECTIONS = [
+    "conversations", "research", "notes", "outreach", "documents",
+    "vault_company", "vault_leads", "vault_industry", "vault_product", "vault_clients",
+]
 _EMBED_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
 _VECTOR_SIZE = 384
 

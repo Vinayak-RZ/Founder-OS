@@ -36,11 +36,25 @@ def init_worlds_db():
             context TEXT DEFAULT '',
             color TEXT DEFAULT '',
             sort_order INTEGER DEFAULT 0,
+            template TEXT DEFAULT 'startup',
+            repo_path TEXT DEFAULT '',
+            github_repo TEXT DEFAULT '',
+            facets_json TEXT DEFAULT '',
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
         """
     )
+    for col, typedef in (
+        ("template", "TEXT DEFAULT 'startup'"),
+        ("repo_path", "TEXT DEFAULT ''"),
+        ("github_repo", "TEXT DEFAULT ''"),
+        ("facets_json", "TEXT DEFAULT ''"),
+    ):
+        try:
+            conn.execute(f"ALTER TABLE worlds ADD COLUMN {col} {typedef}")
+        except Exception:
+            pass
     conn.commit()
     conn.close()
 
@@ -79,10 +93,14 @@ def ensure_defaults() -> None:
     ).fetchone()
     if children and children["n"] == 0 and config.company_name:
         slug = _slugify(config.company_name)
+        from memory.world_templates import template_for_kind
+        from memory import knowledge_vault
+
+        tpl = template_for_kind("project")
         conn.execute(
             """INSERT OR IGNORE INTO worlds
-               (id, parent_id, name, slug, kind, description, context, sort_order)
-               VALUES (?, ?, ?, ?, 'project', ?, ?, 1)""",
+               (id, parent_id, name, slug, kind, description, context, sort_order, template)
+               VALUES (?, ?, ?, ?, 'project', ?, ?, 1, ?)""",
             (
                 slug,
                 ROOT_ID,
@@ -90,9 +108,14 @@ def ensure_defaults() -> None:
                 slug,
                 f"Primary operating world for {config.company_name}.",
                 f"Role: {config.my_role or 'Founder'}. Focus: {config.my_one_liner or 'building the company.'}",
+                tpl,
             ),
         )
         conn.commit()
+        try:
+            knowledge_vault.ensure_world_structure(slug, slug, tpl)
+        except Exception:
+            pass
     conn.close()
     _defaults_seeded = True
 
@@ -142,6 +165,9 @@ def create_world(
     description: str = "",
     context: str = "",
     parent_id: str = ROOT_ID,
+    template: str | None = None,
+    github_repo: str = "",
+    repo_path: str = "",
 ) -> dict:
     ensure_defaults()
     name = (name or "").strip()
@@ -158,15 +184,29 @@ def create_world(
     if existing:
         wid = f"{slug}-{uuid.uuid4().hex[:6]}"
     n = conn.execute("SELECT COUNT(*) AS c FROM worlds WHERE parent_id = ?", (parent_id,)).fetchone()
+    from memory.world_templates import template_for_kind
+    from memory import knowledge_vault
+
+    tpl = template or template_for_kind(kind)
     sort_order = (n["c"] or 0) + 1
     now = datetime.now().isoformat(timespec="seconds")
     conn.execute(
-        """INSERT INTO worlds (id, parent_id, name, slug, kind, description, context, sort_order, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-        (wid, parent_id, name, slug, kind, description or "", context or "", sort_order, now),
+        """INSERT INTO worlds (id, parent_id, name, slug, kind, description, context, sort_order,
+           template, github_repo, repo_path, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        (
+            wid, parent_id, name, slug, kind, description or "", context or "", sort_order,
+            tpl, github_repo or "", repo_path or "", now,
+        ),
     )
     conn.commit()
     conn.close()
+    try:
+        knowledge_vault.ensure_world_structure(wid, slug, tpl)
+        if repo_path:
+            knowledge_vault.link_repo(wid, slug, repo_path, tpl)
+    except Exception:
+        pass
     return get(wid)
 
 
@@ -174,7 +214,10 @@ def update_world(world_id: str, **fields) -> Optional[dict]:
     if world_id == ROOT_ID:
         allowed = {"description", "context", "name"}
     else:
-        allowed = {"name", "kind", "description", "context", "color", "sort_order"}
+        allowed = {
+            "name", "kind", "description", "context", "color", "sort_order",
+            "template", "repo_path", "github_repo", "facets_json",
+        }
     updates = {k: v for k, v in fields.items() if k in allowed and v is not None}
     if not updates:
         return get(world_id)
@@ -244,6 +287,13 @@ def snapshot_block(world_id: Optional[str] = None, max_chars: int = 2200) -> str
             lines.append(child["description"])
         if child.get("context"):
             lines.append("Focused context:\n" + (child["context"] or "")[:1200])
+        tpl = child.get("template") or ""
+        if tpl:
+            lines.append(f"Template: {tpl} (use vault tools for docs in this world)")
+        if child.get("github_repo"):
+            lines.append(f"Linked repo: {child['github_repo']}")
+        if child.get("repo_path"):
+            lines.append(f"Local docs: {child['repo_path']}")
         lines.append("\nGlobal awareness (abbreviated):")
         lines.append(_format_global_snap(global_snap, brief=True))
 

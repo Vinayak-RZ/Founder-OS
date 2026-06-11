@@ -1,10 +1,7 @@
-"""Specialist sub-agents (multi-agent orchestration).
+"""Specialist sub-agents — aggregator-focused delegation.
 
-The top-level agent acts as a SUPERVISOR: for a focused chunk of work it can hand
-off to a specialist sub-agent that runs its own tool-calling loop with a narrowed
-toolset and a role-specific brief. Sub-agents can run in parallel. This mirrors
-the supervisor/handoff pattern (OpenAI Agents SDK / LangGraph / Swarm), implemented
-locally with the shared executor loop.
+The supervisor routes focused work to specialists. Each specialist queries CRM,
+vault, and status tools — it does not replace deep research (Cursor) or coding repos.
 """
 import asyncio
 import logging
@@ -15,35 +12,69 @@ from config import config
 
 logger = logging.getLogger(__name__)
 
-# name -> spec. `categories` selects which tools the sub-agent may use.
+# Aggregator-oriented specialists (max 5). Outreach stays core; others coordinate intel.
 SPECIALISTS = {
-    "researcher": {
-        "categories": {"research", "perception"},
-        "brief": "You are a research specialist. Gather accurate, well-sourced information "
-                 "using web search, scraping, browsing, and company research. Never invent "
-                 "facts. Return a tight, structured findings summary.",
+    "pulse": {
+        "label": "Pulse",
+        "role": "aggregator",
+        "skills": [],
+        "categories": {"tasks", "reminders", "crm", "goals", "meta"},
+        "brief": "Operating pulse across all parallel projects. Summarize what's happening: "
+                 "open tasks, CRM follow-ups, goals, approvals, and linked vault activity. "
+                 "Surface status and gaps — do not run deep research or write code.",
     },
     "outreach": {
+        "label": "Outreach",
+        "role": "outreach",
+        "skills": ["lead-generation"],
         "categories": {"outreach", "crm"},
-        "brief": "You are an outreach specialist. Draft sharp, personalized, concise "
-                 "messages and manage CRM state. Sending stays approval-gated; produce the "
-                 "draft and note the recipient.",
+        "brief": "Outreach specialist — draft sharp, personalized messages and manage CRM "
+                 "pipeline. Sending stays approval-gated. Primary use case for Founder OS.",
     },
-    "ops": {
-        "categories": {"tasks", "reminders", "calendar", "goals"},
-        "brief": "You are an operations specialist. Handle scheduling, reminders, tasks, "
-                 "calendar, and goal tracking precisely. Confirm concrete times/dates.",
+    "leads": {
+        "label": "Leads",
+        "role": "leads",
+        "skills": ["lead-generation"],
+        "categories": {"crm", "outreach", "research"},
+        "brief": "Lead generation coordinator — organize prospects from CRM and the knowledge "
+                 "vault, suggest who to contact next, and draft outreach. Lists and CRM updates "
+                 "only; deep prospecting happens in external tools.",
     },
-    "analyst": {
-        "categories": {"research", "evolution"},
-        "brief": "You are an analyst. Reason carefully over available information and the "
-                 "founder's memory to produce clear judgments, comparisons, and recommendations.",
+    "market": {
+        "label": "Market intel",
+        "role": "research",
+        "skills": ["industry-analysis"],
+        "categories": {"research", "memory"},
+        "brief": "Market and industry intelligence — query the knowledge vault and graph for "
+                 "industry analysis, competitors, and industrial context. Summarize and compare; "
+                 "do not invent data. New deep research is done outside Founder OS.",
+    },
+    "vault": {
+        "label": "Vault",
+        "role": "knowledge",
+        "skills": ["industry-analysis"],
+        "categories": {"research", "memory"},
+        "brief": "Knowledge vault librarian — search across all linked project documentation "
+                 "(per-world domains: company, leads, industry, product, clients). Answer "
+                 "grounded questions with citations. Ingest and link repos when asked.",
     },
 }
 
 
 def list_specialists() -> list:
     return list(SPECIALISTS.keys())
+
+
+def specialist_meta(name: str) -> dict:
+    spec = SPECIALISTS.get(name) or {}
+    return {
+        "id": name,
+        "label": spec.get("label", name.title()),
+        "role": spec.get("role", "specialist"),
+        "skills": spec.get("skills") or [],
+        "brief": spec.get("brief", ""),
+        "categories": sorted(spec.get("categories") or []),
+    }
 
 
 async def run_subagent(name: str, task: str, actor: str = "subagent", on_status=None,
@@ -61,9 +92,11 @@ async def run_subagent(name: str, task: str, actor: str = "subagent", on_status=
     system = (
         f"{spec['brief']}\n\n"
         f"You are a delegated sub-agent for {config.my_name} at {config.company_name}. "
-        f"Focus ONLY on the task you are given, use your tools, and return a concise result "
-        f"the supervisor can use directly. Do not chit-chat."
+        f"Founder OS aggregates parallel work — query vault/CRM/status, return concise "
+        f"actionable summaries for the supervisor. Do not chit-chat."
     )
+    if spec.get("skills"):
+        system += f"\nRelevant skills: {', '.join(spec['skills'])}."
     if world_block:
         system += f"\n\n[ACTIVE WORLD CONTEXT]\n{world_block}"
     schemas = registry.schemas_for(spec["categories"])
