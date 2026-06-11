@@ -81,6 +81,57 @@ function setActiveWorld(id) {
   populateWorldSelect();
 }
 
+function allFleetAgents(agents) {
+  const sup = agents?.supervisor || {};
+  const specs = (agents?.specialists || []).map(s => ({ ...s, label: s.label || s.id }));
+  return [
+    {
+      id: "supervisor",
+      label: "Supervisor",
+      role: "aggregator",
+      tool_count: agents?.total_tools,
+      brief: sup.role || "Orchestrates all specialists",
+    },
+    ...specs,
+  ];
+}
+
+function currentAgentId() {
+  return $("#agent-select")?.value
+    || $("#agent-select-agents")?.value
+    || state.selectedAgent
+    || "pulse";
+}
+
+function populateAgentSelect() {
+  const agents = allFleetAgents(state._agents || {});
+  const current = state.selectedAgent || "pulse";
+  const valid = agents.some(a => a.id === current) ? current : (agents[0]?.id || "pulse");
+  state.selectedAgent = valid;
+
+  const groups = [
+    { label: "Orchestrator", ids: ["supervisor"] },
+    { label: "Specialists", ids: agents.filter(a => a.id !== "supervisor").map(a => a.id) },
+  ];
+  let html = "";
+  for (const g of groups) {
+    const opts = agents.filter(a => g.ids.includes(a.id)).map(a =>
+      `<option value="${esc(a.id)}">${esc(a.label)}</option>`
+    ).join("");
+    if (opts) html += `<optgroup label="${esc(g.label)}">${opts}</optgroup>`;
+  }
+  if (!html) {
+    html = `<option value="pulse">Pulse</option>`;
+  }
+
+  ["#agent-select", "#agent-select-agents"].forEach(sel => {
+    const el = $(sel);
+    if (!el) return;
+    el.innerHTML = html;
+    el.value = valid;
+  });
+}
+
 function populateWorldSelect() {
   const sel = $("#world-select");
   if (!sel) return;
@@ -186,7 +237,8 @@ function renderFleetCard(a, live, sel, runs) {
   const isBusy = agentBusy(live, a.id);
   const isSel = sel === a.id;
   const last = lastRunForAgent(a.id, runs);
-  return `<button type="button" class="fleet-card${isBusy ? " is-busy" : ""}${isSel ? " is-selected" : ""}" data-select-agent="${esc(a.id)}">
+  return `<button type="button" class="fleet-card${isBusy ? " is-busy" : ""}${isSel ? " is-selected" : ""}" data-select-agent="${esc(a.id)}" aria-pressed="${isSel}">
+    ${isSel ? `<span class="fleet-card__active-label">Active</span>` : ""}
     <div class="fleet-card__top">
       ${agentAvatar(a.id, a.role)}
       <span class="fleet-card__status ${isBusy ? "is-busy" : ""}" title="${isBusy ? "Working" : "Idle"}"></span>
@@ -201,11 +253,11 @@ function renderFleetCard(a, live, sel, runs) {
 }
 
 function renderAgentCards(agents, live, selectable = false) {
-  const specs = agents?.specialists || [];
-  const sel = state.selectedAgent;
+  const fleet = allFleetAgents(agents);
+  const sel = currentAgentId();
   const runs = collectAgentRuns();
   if (!selectable) {
-    return `<div class="agent-grid">${specs.map(a => {
+    return `<div class="agent-grid">${fleet.filter(a => a.id !== "supervisor").map(a => {
       const card = { ...a, label: a.label || a.id };
       const busy = agentBusy(live, a.id);
       return `<article class="agent-card${busy ? " is-busy" : ""}">
@@ -213,8 +265,8 @@ function renderAgentCards(agents, live, selectable = false) {
       </article>`;
     }).join("")}</div>`;
   }
-  return `<div class="fleet-rail">${specs.map(a =>
-    renderFleetCard({ ...a, label: a.label || a.id }, live, sel, runs)
+  return `<div class="fleet-rail">${fleet.map(a =>
+    renderFleetCard(a, live, sel, runs)
   ).join("")}</div>`;
 }
 
@@ -330,8 +382,9 @@ function renderAgentsTabPanel() {
 }
 
 function selectedAgentMeta(agents) {
-  const specs = agents?.specialists || [];
-  return specs.find(s => s.id === state.selectedAgent) || specs[0] || { id: "pulse", label: "Pulse" };
+  const id = currentAgentId();
+  return allFleetAgents(agents || state._agents || {}).find(a => a.id === id)
+    || { id: "pulse", label: "Pulse", role: "aggregator" };
 }
 
 function drawGraphs() {
@@ -571,7 +624,13 @@ function renderAgents() {
       </div>
     </header>
 
-    ${renderAgentCards(agents, live, true)}
+    <div class="agent-picker-bar driver-card">
+      <label class="world-select-wrap agent-picker-bar__select">
+        <span class="caption-uppercase">Active agent</span>
+        <select id="agent-select-agents" class="world-select agent-select" aria-label="Choose agent"></select>
+      </label>
+      <div class="agent-picker-bar__cards">${renderAgentCards(agents, live, true)}</div>
+    </div>
 
     <div class="agents-workspace">
       <section class="task-composer driver-card">
@@ -950,19 +1009,21 @@ function isRootWorld(w) {
 }
 
 function renderChat() {
+  const meta = selectedAgentMeta(state._agents || {});
   const msgs = chatHistory.map(m =>
     `<div class="msg ${m.role}">${esc(m.text)}</div>`
   ).join("");
   const live = state.live || {};
+  const isSupervisor = meta.id === "supervisor";
   return `<div class="chat-layout">
     <div class="chat-wrap">
-      <div class="chat-messages" id="chat-messages">${msgs || `<div class="msg system">Hi Vinayak — ask about ${esc(state.config?.company_name || "your startup")}, research ideas, CRM, outreach, or delegate from Agents.</div>`}</div>
-      <p class="world-meta" style="margin-bottom:var(--space-xs)">Context: <strong>${esc(activeWorldLabel())}</strong></p>
+      <div class="chat-messages" id="chat-messages">${msgs || ""}</div>
       <div class="chat-input-row">
-        <textarea class="text-input-on-dark chat-input" id="chat-input" placeholder="Message your supervisor…" rows="2"></textarea>
-        <button class="button-primary" id="chat-send">Send</button>
+        <textarea class="text-input-on-dark chat-input" id="chat-input" placeholder="${isSupervisor ? "Message supervisor…" : `Task for ${esc(meta.label)}…`}" rows="2"></textarea>
+        <button class="button-primary" id="chat-send">${isSupervisor ? "Send" : `Run ${esc(meta.label)}`}</button>
       </div>
       <div class="chat-toolbar">
+        <span class="badge-pill agent-active-badge">${esc(meta.label)}</span>
         <span class="badge-pill">World: ${esc(activeWorldLabel())}</span>
         <label class="button-outline-on-dark button-sm upload-label">Upload<input type="file" id="chat-file" hidden accept=".pdf,.docx,.txt,.md,.csv,.json"></label>
         <button type="button" class="button-outline-on-dark button-sm" id="chat-clear">Clear</button>
@@ -1188,8 +1249,12 @@ async function loadViewData(view) {
     await loadWorldVault(inspectorWorldId());
   }
   if (view === "memory") state._memoryFull = await api("/graph/memory");
+  if (view === "dashboard" || view === "chat") {
+    if (!state._agents?.specialists?.length) {
+      state._agents = await api("/agents").catch(() => state._agents || {});
+    }
+  }
   if (view === "dashboard") {
-    state._agents = await api("/agents");
     state._world = await api("/world");
   }
   await loadGraphData();
@@ -1235,6 +1300,7 @@ function render() {
   $("#content").innerHTML = (fns[currentView] || renderDashboard)();
   document.querySelector(".content")?.classList.toggle("content--worlds", currentView === "world");
   document.querySelector(".content")?.classList.toggle("content--wide", ["agents", "world", "activity"].includes(currentView));
+  populateAgentSelect();
   bindViewEvents();
   afterRender();
   if (currentView === "chat") {
@@ -1261,6 +1327,7 @@ function bindViewEvents() {
   $("#toggle-pause")?.addEventListener("click", togglePause);
   $$("[data-goto]").forEach(b => b.addEventListener("click", () => goView(b.dataset.goto)));
   $$("[data-select-agent]").forEach(b => b.addEventListener("click", () => selectAgent(b.dataset.selectAgent)));
+  $("#agent-select-agents")?.addEventListener("change", e => selectAgent(e.target.value));
   $$("[data-agents-tab]").forEach(b => b.addEventListener("click", () => {
     state.agentsTab = b.dataset.agentsTab;
     localStorage.setItem("fos_agents_tab", state.agentsTab);
@@ -1423,8 +1490,10 @@ async function deleteWorld(id) {
 }
 
 function selectAgent(id) {
+  if (!id) return;
   state.selectedAgent = id;
   localStorage.setItem("fos_selected_agent", id);
+  populateAgentSelect();
   render();
 }
 
@@ -1446,6 +1515,7 @@ async function agentsVaultSearch() {
 }
 
 async function delegateAgent(id) {
+  const agentId = id || currentAgentId();
   const ta = $("#delegate-selected");
   const task = (ta?.value || "").trim();
   if (!task) return;
@@ -1457,18 +1527,31 @@ async function delegateAgent(id) {
   state.agentsTab = "live";
   localStorage.setItem("fos_agents_tab", "live");
   try {
-    const res = await api("/agents/delegate", {
-      method: "POST",
-      body: JSON.stringify({ specialist: id, task, world_id: currentWorldId() }),
-    });
-    const result = typeof res.result === "string" ? res.result : JSON.stringify(res, null, 2);
+    let result;
+    if (agentId === "supervisor") {
+      const res = await api("/chat", {
+        method: "POST",
+        body: JSON.stringify({ message: task, world_id: currentWorldId() }),
+      });
+      result = res.reply || "(no response)";
+      if (res.new_approvals?.length) {
+        state.approvals = res.pending_approvals;
+        updateBadges();
+      }
+    } else {
+      const res = await api("/agents/delegate", {
+        method: "POST",
+        body: JSON.stringify({ specialist: agentId, task, world_id: currentWorldId() }),
+      });
+      result = typeof res.result === "string" ? res.result : JSON.stringify(res, null, 2);
+    }
     state._delegateResult = result;
     state._delegateDraft = "";
     if (ta) ta.value = "";
     const runId = `local-${started}`;
     persistAgentRun({
       id: runId,
-      agent: id,
+      agent: agentId,
       task,
       result,
       duration_s: Math.round((Date.now() - started) / 1000),
@@ -1497,32 +1580,56 @@ async function sendChat() {
   const input = $("#chat-input");
   const text = (input?.value || "").trim();
   if (!text) return;
+  const agentId = currentAgentId();
+  const meta = selectedAgentMeta(state._agents || {});
+  const isSupervisor = agentId === "supervisor";
   input.value = "";
   chatHistory.push({ role: "user", text });
   localStorage.setItem("fos_chat", JSON.stringify(chatHistory));
   render();
   animateLatestChatMessage();
   const btn = $("#chat-send");
+  const btnLabel = isSupervisor ? "Send" : `Run ${meta.label}`;
   if (btn) { btn.disabled = true; btn.textContent = "…"; }
   startLivePoll();
   const pollDuring = setInterval(pollLive, 800);
   try {
-    const res = await api("/chat", {
-      method: "POST",
-      body: JSON.stringify({ message: text, world_id: currentWorldId() }),
-    });
-    chatHistory.push({ role: "agent", text: res.reply || "(no response)" });
-    localStorage.setItem("fos_chat", JSON.stringify(chatHistory));
-    if (res.new_approvals?.length) {
-      state.approvals = res.pending_approvals;
-      updateBadges();
+    if (isSupervisor) {
+      const res = await api("/chat", {
+        method: "POST",
+        body: JSON.stringify({ message: text, world_id: currentWorldId() }),
+      });
+      chatHistory.push({ role: "agent", text: res.reply || "(no response)" });
+      if (res.new_approvals?.length) {
+        state.approvals = res.pending_approvals;
+        updateBadges();
+      }
+    } else {
+      const res = await api("/agents/delegate", {
+        method: "POST",
+        body: JSON.stringify({ specialist: agentId, task: text, world_id: currentWorldId() }),
+      });
+      const reply = typeof res.result === "string" ? res.result : JSON.stringify(res, null, 2);
+      chatHistory.push({ role: "agent", text: reply });
+      persistAgentRun({
+        id: `local-chat-${Date.now()}`,
+        agent: agentId,
+        task: text,
+        result: reply,
+        duration_s: 0,
+        ts: Math.floor(Date.now() / 1000),
+        tools: [],
+        source: "chat",
+      });
     }
+    localStorage.setItem("fos_chat", JSON.stringify(chatHistory));
   } catch (e) {
     chatHistory.push({ role: "system", text: "Error: " + e.message });
+    localStorage.setItem("fos_chat", JSON.stringify(chatHistory));
   }
   clearInterval(pollDuring);
   pollLive();
-  if (btn) { btn.disabled = false; btn.textContent = "Send"; }
+  if (btn) { btn.disabled = false; btn.textContent = btnLabel; }
   render();
   animateLatestChatMessage();
 }
@@ -1601,9 +1708,12 @@ function updateStatus() {
 
 async function refresh() {
   const prevWorld = state.activeWorldId;
+  const prevAgent = state.selectedAgent;
   state = { ...state, ...(await api("/state")) };
   state.activeWorldId = prevWorld || state.activeWorldId || "root";
+  state.selectedAgent = prevAgent || state.selectedAgent || "pulse";
   populateWorldSelect();
+  populateAgentSelect();
   updateBadges();
   updateStatus();
 }
@@ -1642,6 +1752,10 @@ $("#world-select")?.addEventListener("change", e => {
   if (currentView === "world" || currentView === "chat" || currentView === "agents") render();
 });
 
+$("#agent-select")?.addEventListener("change", e => {
+  selectAgent(e.target.value);
+});
+
 FOSMotion?.init?.();
 FOSMotion?.runShell?.();
 
@@ -1649,6 +1763,7 @@ refresh().then(async () => {
   state._agents = await api("/agents").catch(() => ({}));
   state._world = await api("/world").catch(() => ({}));
   populateWorldSelect();
+  populateAgentSelect();
   await loadGraphData();
   render();
   startLivePoll();
