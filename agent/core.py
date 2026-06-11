@@ -36,8 +36,54 @@ def _memory_context(message: str) -> str:
     return "\n".join(f"- [{h['collection']}] {h['text'][:200]}" for h in hits)
 
 
+async def _rag_context(message: str, mode: str, world_id: str | None) -> str:
+    """Prefetch retrieval context based on user-selected RAG mode."""
+    mode = (mode or "auto").strip().lower()
+    if mode in ("", "auto"):
+        return _memory_context(message)
+    try:
+        if mode == "hybrid":
+            from memory.retrieval import hybrid_search
+            hits = hybrid_search(message, k=8)
+            if not hits:
+                return ""
+            lines = [f"- [{h.get('collection', '?')}] {h['text'][:240]}" for h in hits]
+            return "[HYBRID RAG — dense + BM25]\n" + "\n".join(lines)
+
+        if mode == "documents":
+            from memory.retrieval import hybrid_search
+            hits = hybrid_search(message, collections=["documents"], k=8)
+            if not hits:
+                return ""
+            lines = [f"- {h['text'][:260]}" for h in hits]
+            return "[DOCUMENT RAG]\n" + "\n".join(lines)
+
+        if mode == "graphrag":
+            from memory import graphrag
+            answer = await graphrag.global_answer(message, top_n=4)
+            if answer:
+                return f"[GRAPH RAG — network-level context]\n{answer[:3500]}"
+            return ""
+
+        if mode == "vault":
+            from memory import knowledge_vault
+            wid = world_id if world_id and world_id != "root" else None
+            hits = knowledge_vault.search_vault(message, world_id=wid, n_results=8)
+            if not hits:
+                return "[VAULT] No vault hits — link docs in Worlds or pick a sub-world."
+            lines = [
+                f"- [{h.get('metadata', {}).get('domain', '?')}] "
+                f"{h.get('metadata', {}).get('source', '')}: {h['text'][:220]}"
+                for h in hits
+            ]
+            return "[KNOWLEDGE VAULT RAG]\n" + "\n".join(lines)
+    except Exception as e:
+        logger.debug(f"[core] rag mode {mode} failed: {e}")
+    return _memory_context(message)
+
+
 async def run(user_message: str, image_context: str = "", actor: str = "user",
-              on_status=None, world_id: str | None = None) -> str:
+              on_status=None, world_id: str | None = None, rag_mode: str = "auto") -> str:
     """Process one user turn through plan -> execute -> verify and return the reply."""
     if config.agent_paused:
         return "⏸ I'm paused right now (AGENT_PAUSED is on). Turn it off to let me act again."
@@ -47,7 +93,7 @@ async def run(user_message: str, image_context: str = "", actor: str = "user",
     if image_context:
         enriched += f"\n\n[IMAGE CONTENT]\n{image_context}"
 
-    mem_ctx = _memory_context(user_message)
+    mem_ctx = await _rag_context(user_message, rag_mode, world_id)
     try:
         world_ctx = hierarchical_worlds.snapshot_block(world_id)
     except Exception:

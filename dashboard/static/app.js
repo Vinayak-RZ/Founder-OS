@@ -10,9 +10,26 @@ function loadSelectedSpecialist() {
   return "";
 }
 
+const DEFAULT_SPECIALISTS = [
+  { id: "pulse", label: "Pulse", role: "aggregator", tool_count: 0, brief: "Operating pulse across parallel projects" },
+  { id: "outreach", label: "Outreach", role: "outreach", tool_count: 0, brief: "Outreach drafts and CRM pipeline" },
+  { id: "leads", label: "Leads", role: "leads", tool_count: 0, brief: "Lead lists and contact priorities" },
+  { id: "market", label: "Market intel", role: "research", tool_count: 0, brief: "Industry and competitor intelligence" },
+  { id: "vault", label: "Vault", role: "knowledge", tool_count: 0, brief: "Knowledge vault librarian" },
+];
+
+const RAG_MODES = [
+  { id: "auto", label: "Auto", hint: "Agent picks retrieval" },
+  { id: "hybrid", label: "Hybrid RAG", hint: "Dense + BM25 fusion" },
+  { id: "graphrag", label: "GraphRAG", hint: "Knowledge graph communities" },
+  { id: "vault", label: "Vault", hint: "World knowledge vault" },
+  { id: "documents", label: "Documents", hint: "Ingested document store" },
+];
+
 let state = {
   live: {},
   selectedSpecialist: loadSelectedSpecialist(),
+  ragMode: localStorage.getItem("fos_rag_mode") || "auto",
   activeWorldId: localStorage.getItem("fos_active_world") || "root",
   agentsTab: localStorage.getItem("fos_agents_tab") || "runs",
   expandedRunId: null,
@@ -101,15 +118,20 @@ function supervisorMeta(agents) {
 }
 
 function listSpecialists(agents) {
-  return (agents?.specialists || []).map(s => ({ ...s, label: s.label || s.id }));
+  const specs = agents?.specialists || [];
+  const list = specs.length ? specs : DEFAULT_SPECIALISTS;
+  return list.map(s => ({ ...s, label: s.label || s.id }));
 }
 
 function currentSpecialistId() {
-  const raw = $("#specialist-select")?.value
-    ?? $("#specialist-select-agents")?.value
+  const raw = $("#specialist-select-agents")?.value
     ?? state.selectedSpecialist
     ?? "";
   return raw === "auto" ? "" : (raw || "");
+}
+
+function currentRagMode() {
+  return $("#rag-mode-select")?.value || state.ragMode || "auto";
 }
 
 function isDirectSpecialist() {
@@ -127,12 +149,22 @@ function populateSpecialistSelect() {
   ).join("");
   const html = `<option value="">Auto — supervisor decides</option>${specOpts}`;
 
-  ["#specialist-select", "#specialist-select-agents"].forEach(sel => {
-    const el = $(sel);
-    if (!el) return;
+  const el = $("#specialist-select-agents");
+  if (el) {
     el.innerHTML = html;
     el.value = current;
-  });
+  }
+}
+
+function renderRagModeSelect(id = "rag-mode-select") {
+  const mode = state.ragMode || "auto";
+  const opts = RAG_MODES.map(m =>
+    `<option value="${esc(m.id)}" title="${esc(m.hint)}">${esc(m.label)}</option>`
+  ).join("");
+  return `<label class="chat-control">
+    <span class="caption-uppercase">Retrieval</span>
+    <select id="${esc(id)}" class="world-select agent-select" aria-label="RAG mode">${opts}</select>
+  </label>`;
 }
 
 function routingLabel(agents) {
@@ -294,6 +326,7 @@ function renderFleetCard(a, live, sel, runs) {
     </div>
     <div class="fleet-card__name">${esc(a.label)}</div>
     ${a.role ? agentRoleBadge(a.role) : ""}
+    <p class="fleet-card__brief">${esc((a.brief || "").slice(0, 72))}</p>
     <div class="fleet-card__meta">
       <span>${a.tool_count ?? "—"} tools</span>
       ${last ? `<span>${esc(last)}</span>` : ""}
@@ -444,6 +477,9 @@ function drawGraphs() {
       FOSGraph.render(el, state._runtimeGraph);
     }
   }
+  if (currentView === "chat" && state._runtimeGraph && document.getElementById("graph-runtime-chat")) {
+    FOSGraph.render("graph-runtime-chat", state._runtimeGraph, { layout: { name: "breadthfirst", directed: true, padding: 16 } });
+  }
   if (currentView === "world") {
     const graph = worldGraphTab === "ecosystem"
       ? state._worldGraph
@@ -538,6 +574,9 @@ async function pollLive() {
         const el = state.agentsTab === "live" ? "graph-runtime-agents-tab" : null;
         if (el && document.getElementById(el)) FOSGraph.update(el, state._runtimeGraph);
       }
+      if (currentView === "chat" && document.getElementById("graph-runtime-chat")) {
+        FOSGraph.update("graph-runtime-chat", state._runtimeGraph);
+      }
     }
   } catch (_) { /* ignore */ }
 }
@@ -617,6 +656,19 @@ function renderDashboard() {
         <p class="caption-uppercase">LLM usage (7d)</p>
         <canvas id="chart-usage" role="img" aria-label="LLM calls sparkline"></canvas>
       </section>
+      <section class="driver-card span-8">
+        <p class="caption-uppercase">Recent activity</p>
+        <div class="activity-timeline">${(state.actions || []).slice(0, 8).map(a =>
+          `<div class="activity-timeline__row"><span class="mono">${esc(a.tool_name)}</span><span class="muted">${esc((a.created_at || "").slice(11, 19))}</span></div>`
+        ).join("") || "<p class='muted'>No tool actions yet</p>"}</div>
+      </section>
+      <section class="driver-card span-4">
+        <p class="caption-uppercase">Specialist status</p>
+        <div class="specialist-chips">${listSpecialists(agents).map(s =>
+          `<span class="specialist-chip${agentBusy(live, s.id) ? " is-busy" : ""}">${esc(s.label)}</span>`
+        ).join("")}</div>
+        <button type="button" class="button-outline-on-dark button-sm" data-goto="agents" style="margin-top:var(--space-sm)">Open agents</button>
+      </section>
       <section class="driver-card span-12">
         <p class="caption-uppercase">Agent fleet</p>
         <div style="margin-top:var(--space-sm)">${renderAgentCards(agents, live)}</div>
@@ -675,16 +727,20 @@ function renderAgents() {
 
     ${renderSupervisorBanner(agents, live)}
 
-    <div class="agent-picker-bar driver-card">
+    <section class="agent-picker-bar driver-card">
       <div class="agent-picker-bar__head">
+        <div>
+          <p class="caption-uppercase">Specialist routing</p>
+          <p class="world-meta">Supervisor is always on — pick <strong>Auto</strong> or a specialist for direct tasks</p>
+        </div>
         <label class="world-select-wrap agent-picker-bar__select">
-          <span class="caption-uppercase">Specialist override</span>
-          <select id="specialist-select-agents" class="world-select agent-select" aria-label="Optional specialist"></select>
+          <span class="caption-uppercase">Dropdown</span>
+          <select id="specialist-select-agents" class="world-select agent-select" aria-label="Specialist override"></select>
         </label>
         <span class="badge-pill agent-routing-badge">${esc(routeLabel)}</span>
       </div>
       <div class="agent-picker-bar__cards">${renderAgentCards(agents, live, true)}</div>
-    </div>
+    </section>
 
     <div class="agents-workspace">
       <section class="task-composer driver-card">
@@ -1067,28 +1123,73 @@ function renderChat() {
   const meta = routingMeta(agents);
   const routeLabel = routingLabel(agents);
   const direct = isDirectSpecialist();
+  const specs = listSpecialists(agents);
+  const ragMode = state.ragMode || "auto";
+  const ragMeta = RAG_MODES.find(m => m.id === ragMode) || RAG_MODES[0];
   const msgs = chatHistory.map(m =>
-    `<div class="msg ${m.role}">${esc(m.text)}</div>`
+    `<div class="msg ${m.role}"><div class="msg-bubble">${esc(m.text)}</div></div>`
   ).join("");
   const live = state.live || {};
-  return `<div class="chat-layout">
-    <div class="chat-wrap">
-      <div class="chat-messages" id="chat-messages">${msgs || ""}</div>
-      <div class="chat-input-row">
-        <textarea class="text-input-on-dark chat-input" id="chat-input" placeholder="${direct ? `Task for ${esc(meta.label)}…` : "Message supervisor…"}" rows="2"></textarea>
-        <button class="button-primary" id="chat-send">${direct ? `Run ${esc(meta.label)}` : "Send"}</button>
+  const empty = !chatHistory.length;
+  const recentRuns = collectAgentRuns().slice(0, 4);
+  return `<div class="chat-shell">
+    <header class="chat-header driver-card">
+      <div>
+        <p class="section-eyebrow">Chat</p>
+        <h2 class="title-md">${esc(state.config?.company_name || "Founder OS")}</h2>
       </div>
-      <div class="chat-toolbar">
-        <span class="badge-pill supervisor-topbar-badge">Supervisor</span>
+      <div class="chat-header__meta">
+        <span class="badge-pill">${esc(activeWorldLabel())}</span>
         <span class="badge-pill agent-routing-badge">${esc(routeLabel)}</span>
-        <span class="badge-pill">World: ${esc(activeWorldLabel())}</span>
-        <label class="button-outline-on-dark button-sm upload-label">Upload<input type="file" id="chat-file" hidden accept=".pdf,.docx,.txt,.md,.csv,.json"></label>
-        <button type="button" class="button-outline-on-dark button-sm" id="chat-clear">Clear</button>
-        <button type="button" class="button-outline-on-dark button-sm" data-goto="agents">Agents</button>
-        <button type="button" class="button-outline-on-dark button-sm" data-goto="world">Worlds</button>
+        <button type="button" class="button-outline-on-dark button-sm" data-goto="agents">Change specialist</button>
       </div>
+    </header>
+    <div class="chat-layout chat-layout--rich">
+      <div class="chat-wrap">
+        <div class="chat-messages${empty ? " is-empty" : ""}" id="chat-messages">
+          ${empty ? `<div class="chat-empty">
+            <p class="title-md">Supervisor ready</p>
+            <p class="body-md">Routing: <strong>${esc(routeLabel)}</strong> · Retrieval: <strong>${esc(ragMeta.label)}</strong></p>
+            <div class="chat-empty__chips">${specs.map(s =>
+              `<button type="button" class="delegate-hint" data-goto="agents">${esc(s.label)}</button>`
+            ).join("")}</div>
+          </div>` : msgs}
+        </div>
+        <div class="chat-composer driver-card">
+          <div class="chat-composer__controls">
+            ${renderRagModeSelect("rag-mode-select")}
+          </div>
+          <div class="chat-input-row">
+            <textarea class="text-input-on-dark chat-input" id="chat-input" placeholder="${direct ? `Task for ${esc(meta.label)}…` : "Message supervisor…"}" rows="3"></textarea>
+            <button class="button-primary" id="chat-send">${direct ? `Run ${esc(meta.label)}` : "Send"}</button>
+          </div>
+          <div class="chat-toolbar">
+            <label class="button-outline-on-dark button-sm upload-label">Upload<input type="file" id="chat-file" hidden accept=".pdf,.docx,.txt,.md,.csv,.json"></label>
+            <button type="button" class="button-outline-on-dark button-sm" id="chat-clear">Clear</button>
+            <button type="button" class="button-outline-on-dark button-sm" data-goto="world">Worlds</button>
+          </div>
+        </div>
+      </div>
+      <aside class="chat-rail">
+        ${renderLivePanel(live, "chat-live-panel")}
+        <section class="driver-card chat-rail-card">
+          <p class="caption-uppercase">Specialists</p>
+          <div class="specialist-chips" style="margin-top:var(--space-xxs)">${specs.map(s =>
+            `<span class="specialist-chip${currentSpecialistId() === s.id ? " is-selected" : ""}${agentBusy(live, s.id) ? " is-busy" : ""}">${esc(s.label)}</span>`
+          ).join("")}</div>
+        </section>
+        <section class="driver-card chat-rail-card">
+          <p class="caption-uppercase">Runtime</p>
+          <div id="graph-runtime-chat" class="graph-canvas graph-canvas--compact" style="margin-top:var(--space-xxs)"></div>
+        </section>
+        ${recentRuns.length ? `<section class="driver-card chat-rail-card">
+          <p class="caption-uppercase">Recent runs</p>
+          <div class="activity-timeline">${recentRuns.map(r =>
+            `<div class="activity-timeline__row"><span>${esc((r.agent || "").toUpperCase())}</span><span class="muted">${esc((r.task || "").slice(0, 40))}</span></div>`
+          ).join("")}</div>
+        </section>` : ""}
+      </aside>
     </div>
-    ${renderLivePanel(live, "chat-live-panel")}
   </div>`;
 }
 
@@ -1286,6 +1387,9 @@ async function loadViewData(view) {
       api("/tools").catch(() => ({})),
     ]);
     state._agents = ag;
+    if (!state._agents?.specialists?.length) {
+      state._agents = { ...state._agents, specialists: DEFAULT_SPECIALISTS };
+    }
     state._activity = act;
     state._agentRunsApi = runs.runs || [];
     state._agentActions = runs.actions || act.actions || [];
@@ -1306,10 +1410,14 @@ async function loadViewData(view) {
     await loadWorldVault(inspectorWorldId());
   }
   if (view === "memory") state._memoryFull = await api("/graph/memory");
-  if (view === "dashboard" || view === "chat") {
+  if (view === "dashboard" || view === "chat" || view === "agents") {
     if (!state._agents?.specialists?.length) {
-      state._agents = await api("/agents").catch(() => state._agents || {});
+      state._agents = await api("/agents").catch(() => ({ specialists: DEFAULT_SPECIALISTS }));
     }
+  }
+  if (view === "chat") {
+    state._activity = await api("/activity").catch(() => state._activity || {});
+    state._agentRunsApi = (await api("/agents/runs").catch(() => ({}))).runs || state._agentRunsApi;
   }
   if (view === "dashboard") {
     state._world = await api("/world");
@@ -1356,8 +1464,10 @@ function render() {
   };
   $("#content").innerHTML = (fns[currentView] || renderDashboard)();
   document.querySelector(".content")?.classList.toggle("content--worlds", currentView === "world");
-  document.querySelector(".content")?.classList.toggle("content--wide", ["agents", "world", "activity"].includes(currentView));
+  document.querySelector(".content")?.classList.toggle("content--wide", ["agents", "world", "activity", "chat"].includes(currentView));
   populateSpecialistSelect();
+  const ragEl = $("#rag-mode-select");
+  if (ragEl) ragEl.value = state.ragMode || "auto";
   bindViewEvents();
   afterRender();
   if (currentView === "chat") {
@@ -1385,6 +1495,10 @@ function bindViewEvents() {
   $$("[data-goto]").forEach(b => b.addEventListener("click", () => goView(b.dataset.goto)));
   $$("[data-select-specialist]").forEach(b => b.addEventListener("click", () => selectSpecialist(b.dataset.selectSpecialist || "")));
   $("#specialist-select-agents")?.addEventListener("change", e => selectSpecialist(e.target.value));
+  $("#rag-mode-select")?.addEventListener("change", e => {
+    state.ragMode = e.target.value || "auto";
+    localStorage.setItem("fos_rag_mode", state.ragMode);
+  });
   $$("[data-agents-tab]").forEach(b => b.addEventListener("click", () => {
     state.agentsTab = b.dataset.agentsTab;
     localStorage.setItem("fos_agents_tab", state.agentsTab);
@@ -1589,7 +1703,7 @@ async function delegateAgent() {
     if (!direct) {
       const res = await api("/chat", {
         method: "POST",
-        body: JSON.stringify({ message: task, world_id: currentWorldId() }),
+        body: JSON.stringify({ message: task, world_id: currentWorldId(), rag_mode: currentRagMode() }),
       });
       result = res.reply || "(no response)";
       if (res.new_approvals?.length) {
@@ -1658,7 +1772,7 @@ async function sendChat() {
     if (!direct) {
       const res = await api("/chat", {
         method: "POST",
-        body: JSON.stringify({ message: text, world_id: currentWorldId() }),
+        body: JSON.stringify({ message: text, world_id: currentWorldId(), rag_mode: currentRagMode() }),
       });
       chatHistory.push({ role: "agent", text: res.reply || "(no response)" });
       if (res.new_approvals?.length) {
@@ -1811,10 +1925,6 @@ $("#notif-read-all")?.addEventListener("click", async () => {
 $("#world-select")?.addEventListener("change", e => {
   setActiveWorld(e.target.value);
   if (currentView === "world" || currentView === "chat" || currentView === "agents") render();
-});
-
-$("#specialist-select")?.addEventListener("change", e => {
-  selectSpecialist(e.target.value);
 });
 
 FOSMotion?.init?.();

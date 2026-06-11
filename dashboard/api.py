@@ -96,11 +96,15 @@ def api_chat():
         live_ops.set_phase(text)
 
     world_id = (data.get("world_id") or "").strip() or None
+    rag_mode = (data.get("rag_mode") or "auto").strip().lower() or "auto"
 
     async def _go():
         live_ops.begin("user", message)
         try:
-            return await core.run(message, actor="user", on_status=_on_status, world_id=world_id)
+            return await core.run(
+                message, actor="user", on_status=_on_status,
+                world_id=world_id, rag_mode=rag_mode,
+            )
         finally:
             live_ops.end()
 
@@ -266,6 +270,7 @@ def api_delegate():
     specialist = (data.get("specialist") or "").strip()
     task = (data.get("task") or "").strip()
     world_id = (data.get("world_id") or "").strip() or None
+    rag_mode = (data.get("rag_mode") or "auto").strip().lower() or "auto"
     if not specialist or not task:
         return jsonify({"error": "specialist and task are required"}), 400
     from agent import subagent
