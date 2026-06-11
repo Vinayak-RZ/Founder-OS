@@ -30,6 +30,7 @@ from agent.tools import (  # noqa: F401
     about_tools,
     chart_tools,
     graphrag_tools,
+    vault_tools,
 )
 
 # Load any tools the agent authored for itself in past sessions.

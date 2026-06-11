@@ -201,15 +201,15 @@ def api_live():
 @bp.route("/agents")
 def api_agents():
     from agent import subagent, registry
+    from agent import skills_catalog
     specs = []
-    for name, spec in subagent.SPECIALISTS.items():
+    for name in subagent.list_specialists():
+        meta = subagent.specialist_meta(name)
+        spec = subagent.SPECIALISTS[name]
         cats = spec["categories"]
         tools = [t for t in registry.all_tools() if t.category in cats]
         specs.append({
-            "id": name,
-            "label": name.title(),
-            "brief": spec["brief"],
-            "categories": sorted(cats),
+            **meta,
             "tool_count": len(tools),
         })
     live = _safe(lambda: __import__("dashboard.live_ops", fromlist=["snapshot"]).snapshot(), {})
@@ -217,10 +217,12 @@ def api_agents():
         "supervisor": {
             "id": "supervisor",
             "label": "Supervisor",
-            "role": "Routes tasks, approves risk, orchestrates specialists",
+            "role": "Aggregator — routes tasks, tracks parallel projects, orchestrates specialists",
             "status": "busy" if live.get("active") else "ready",
         },
         "specialists": specs,
+        "skills": _safe(skills_catalog.list_skills, []),
+        "mission": "aggregator",
         "total_tools": len(registry.all_tools()),
         "live": live,
     })
@@ -408,6 +410,9 @@ def api_worlds_create():
             kind=(data.get("kind") or "project").strip(),
             description=(data.get("description") or "").strip(),
             context=(data.get("context") or "").strip(),
+            template=(data.get("template") or "").strip() or None,
+            github_repo=(data.get("github_repo") or "").strip(),
+            repo_path=(data.get("repo_path") or "").strip(),
         )
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
@@ -434,3 +439,74 @@ def api_worlds_delete(world_id):
     if not ok:
         return jsonify({"error": "world not found"}), 404
     return jsonify({"ok": True, "tree": hierarchical_worlds.get_tree()})
+
+
+@bp.route("/world-templates")
+def api_world_templates():
+    from memory import world_templates
+    return jsonify({"templates": world_templates.list_templates()})
+
+
+@bp.route("/worlds/<world_id>/vault")
+def api_world_vault(world_id):
+    from memory import worlds as hierarchical_worlds
+    from memory import knowledge_vault
+    from memory.world_templates import template_for_kind
+    w = hierarchical_worlds.get(world_id)
+    if not w:
+        return jsonify({"error": "world not found"}), 404
+    tpl = w.get("template") or template_for_kind(w.get("kind", "project"))
+    structure = _safe(
+        lambda: knowledge_vault.vault_structure(world_id, w.get("slug") or world_id, tpl),
+        {},
+    )
+    return jsonify({"world": w, "vault": structure})
+
+
+@bp.route("/worlds/<world_id>/vault/ingest", methods=["POST"])
+def api_world_vault_ingest(world_id):
+    from memory import worlds as hierarchical_worlds
+    from memory import knowledge_vault
+    from memory.world_templates import template_for_kind
+    data = request.get_json(silent=True) or {}
+    w = hierarchical_worlds.get(world_id)
+    if not w:
+        return jsonify({"error": "world not found"}), 404
+    tpl = w.get("template") or template_for_kind(w.get("kind", "project"))
+    slug = w.get("slug") or world_id
+    path = (data.get("path") or "").strip()
+    if not path:
+        path = str(knowledge_vault.world_vault_path(world_id, slug))
+    result = _safe(lambda: knowledge_vault.ingest_tree(path, world_id, slug, tpl), {"error": "ingest failed"})
+    return jsonify(result)
+
+
+@bp.route("/worlds/<world_id>/vault/link-repo", methods=["POST"])
+def api_world_vault_link_repo(world_id):
+    from memory import worlds as hierarchical_worlds
+    from memory import knowledge_vault
+    from memory.world_templates import template_for_kind
+    data = request.get_json(silent=True) or {}
+    repo_path = (data.get("repo_path") or "").strip()
+    if not repo_path:
+        return jsonify({"error": "repo_path is required"}), 400
+    w = hierarchical_worlds.get(world_id)
+    if not w:
+        return jsonify({"error": "world not found"}), 404
+    tpl = w.get("template") or template_for_kind(w.get("kind", "project"))
+    slug = w.get("slug") or world_id
+    hierarchical_worlds.update_world(world_id, repo_path=repo_path)
+    result = _safe(lambda: knowledge_vault.link_repo(world_id, slug, repo_path, tpl), {"error": "link failed"})
+    return jsonify(result)
+
+
+@bp.route("/vault/search")
+def api_vault_search():
+    from memory import knowledge_vault
+    q = (request.args.get("q") or "").strip()
+    world_id = (request.args.get("world_id") or "").strip() or None
+    domain = (request.args.get("domain") or "").strip() or None
+    if not q:
+        return jsonify({"error": "q is required"}), 400
+    hits = _safe(lambda: knowledge_vault.search_vault(q, world_id=world_id, domain=domain), [])
+    return jsonify({"query": q, "hits": hits})
