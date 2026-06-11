@@ -225,6 +225,28 @@ def delete(collection_name: str, doc_id: str):
     get_collection(collection_name).delete(ids=[doc_id])
 
 
+def collections_overview(samples_per: int = 5) -> list:
+    """Counts and recent samples per vector collection for the UI."""
+    out = []
+    for name in COLLECTIONS:
+        entry = {"name": name, "count": 0, "samples": []}
+        try:
+            col = get_collection(name)
+            count = col.count()
+            entry["count"] = count
+            if count:
+                for item in get_recent(name, limit=samples_per):
+                    entry["samples"].append({
+                        "id": item.get("id"),
+                        "text": (item.get("text") or "")[:280],
+                        "metadata": item.get("metadata") or {},
+                    })
+        except Exception as e:
+            logger.debug(f"[vector_store] overview {name}: {e}")
+        out.append(entry)
+    return out
+
+
 def get_recent(collection_name: str, limit: int = 10) -> list:
     col = get_collection(collection_name)
     count = col.count()

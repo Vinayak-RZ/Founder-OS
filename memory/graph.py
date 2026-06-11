@@ -124,6 +124,37 @@ def describe(name: str) -> str:
     return "\n".join(lines)
 
 
+def export_graph(limit_entities: int = 80, limit_relations: int = 120) -> dict:
+    """Export entities and relations for UI graph visualization."""
+    conn = get_conn()
+    try:
+        entities = [
+            dict(r)
+            for r in conn.execute(
+                "SELECT id, name, type, attrs_json FROM kg_entities ORDER BY updated_at DESC LIMIT ?",
+                (limit_entities,),
+            ).fetchall()
+        ]
+        relations = [
+            dict(r)
+            for r in conn.execute(
+                """
+                SELECT e1.name AS src, e1.type AS src_type, r.rel AS rel,
+                       e2.name AS dst, e2.type AS dst_type, r.weight AS weight
+                FROM kg_relations r
+                JOIN kg_entities e1 ON r.src_id = e1.id
+                JOIN kg_entities e2 ON r.dst_id = e2.id
+                ORDER BY r.id DESC
+                LIMIT ?
+                """,
+                (limit_relations,),
+            ).fetchall()
+        ]
+    finally:
+        conn.close()
+    return {"entities": entities, "relations": relations}
+
+
 def build_from_crm() -> dict:
     """Seed/refresh the graph from CRM contacts and companies."""
     from memory.sql_store import get_all_contacts

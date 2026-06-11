@@ -3,10 +3,10 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Founder OS</title>
+  <title>Founder OS — Stamped Energy</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Plus+Jakarta+Sans:wght@600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/static/tokens.css">
   <link rel="stylesheet" href="/static/components.css">
   <link rel="stylesheet" href="/static/app.css">
@@ -16,18 +16,20 @@
   <div class="app">
     <aside class="sidebar top-nav-on-dark" aria-label="Main navigation">
       <div class="brand">
-        <div class="brand-mark" aria-hidden="true">FO</div>
+        <div class="brand-mark" aria-hidden="true">SE</div>
         <div>
           <div class="brand-name title-sm">Founder OS</div>
-          <div class="brand-sub caption" id="brand-sub">Loading…</div>
+          <div class="brand-sub caption" id="brand-sub">Stamped Energy</div>
         </div>
       </div>
       <nav class="nav" id="nav">
-        <button type="button" data-view="dashboard" class="nav-link is-active"><span>Dashboard</span></button>
+        <button type="button" data-view="dashboard" class="nav-link is-active"><span>Command</span></button>
         <button type="button" data-view="chat" class="nav-link"><span>Chat</span></button>
+        <button type="button" data-view="agents" class="nav-link"><span>Agents</span></button>
+        <button type="button" data-view="world" class="nav-link"><span>Worlds</span></button>
         <button type="button" data-view="approvals" class="nav-link"><span>Approvals</span><span class="badge-pill badge-pill--alert" id="nav-approval-badge" hidden>0</span></button>
         <button type="button" data-view="crm" class="nav-link"><span>CRM</span></button>
-        <button type="button" data-view="goals" class="nav-link"><span>Goals &amp; tasks</span></button>
+        <button type="button" data-view="goals" class="nav-link"><span>Goals</span></button>
         <button type="button" data-view="memory" class="nav-link"><span>Memory</span></button>
         <button type="button" data-view="tools" class="nav-link"><span>Tools</span></button>
         <button type="button" data-view="activity" class="nav-link"><span>Activity</span></button>
@@ -41,8 +43,18 @@
 
     <div class="main">
       <header class="topbar">
-        <h1 class="display-md" id="view-title">Dashboard</h1>
+        <div class="topbar-lead">
+          <h1 class="display-md" id="view-title">Command center</h1>
+          <div class="live-strip" id="live-strip" hidden>
+            <span class="live-pulse" aria-hidden="true"></span>
+            <span class="live-strip-text" id="live-strip-text">Agent working…</span>
+          </div>
+        </div>
         <div class="topbar-actions">
+          <label class="world-select-wrap">
+            <span class="caption-uppercase">World</span>
+            <select id="world-select" class="world-select" aria-label="Active world context"></select>
+          </label>
           <button type="button" class="button-tertiary-text button-sm" id="btn-notifications" aria-label="Notifications">
             Notifications <span class="badge-pill" id="notif-badge" hidden>0</span>
           </button>
@@ -64,6 +76,12 @@
     <div id="notif-list" class="drawer-body"></div>
   </dialog>
 
+  <script src="https://cdn.jsdelivr.net/npm/gsap@3.12.7/dist/gsap.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/gsap@3.12.7/dist/ScrollTrigger.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/cytoscape@3.30.2/dist/cytoscape.min.js"></script>
+  <script src="/static/charts.js"></script>
+  <script src="/static/graph-viz.js"></script>
+  <script src="/static/motion.js"></script>
   <script src="/static/app.js"></script>
 </body>
 </html>

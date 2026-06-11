@@ -46,23 +46,32 @@ def list_specialists() -> list:
     return list(SPECIALISTS.keys())
 
 
-async def run_subagent(name: str, task: str, actor: str = "subagent") -> dict:
+async def run_subagent(name: str, task: str, actor: str = "subagent", on_status=None,
+                       world_id: str | None = None) -> dict:
     spec = SPECIALISTS.get(name)
     if not spec:
         return {"error": f"Unknown specialist '{name}'. Options: {list_specialists()}"}
 
+    from memory import worlds as hierarchical_worlds
+    world_block = ""
+    try:
+        world_block = hierarchical_worlds.snapshot_block(world_id, max_chars=1400)
+    except Exception:
+        pass
     system = (
         f"{spec['brief']}\n\n"
         f"You are a delegated sub-agent for {config.my_name} at {config.company_name}. "
         f"Focus ONLY on the task you are given, use your tools, and return a concise result "
         f"the supervisor can use directly. Do not chit-chat."
     )
+    if world_block:
+        system += f"\n\n[ACTIVE WORLD CONTEXT]\n{world_block}"
     schemas = registry.schemas_for(spec["categories"])
     messages = [{"role": "system", "content": system},
                 {"role": "user", "content": task}]
     tools_used = []
     result = await execute_loop(messages, schemas, actor=f"subagent:{name}",
-                                on_status=None, tools_used=tools_used, max_steps=6)
+                                on_status=on_status, tools_used=tools_used, max_steps=6)
     return {"specialist": name, "result": result, "tools_used": tools_used}
 
 

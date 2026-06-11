@@ -29,11 +29,13 @@ def _run_async(coro):
 def collect_state() -> dict:
     from agent import about, budget, finance, store
     from memory import world_model
+    from memory import worlds as hierarchical_worlds
     import agent.trace as trace
     from dashboard import notifications
 
     return {
         "about": _safe(about.describe, {}),
+        "worlds": _safe(hierarchical_worlds.get_tree, {}),
         "snapshot": _safe(world_model.build_snapshot, {}),
         "usage": _safe(budget.status, {}),
         "finance": _safe(finance.summary, {}),
@@ -80,8 +82,19 @@ def api_chat():
 
     before = {a["id"] for a in store.list_pending_approvals()}
 
+    from dashboard import live_ops
+
+    async def _on_status(text: str):
+        live_ops.set_phase(text)
+
+    world_id = (data.get("world_id") or "").strip() or None
+
     async def _go():
-        return await core.run(message, actor="user")
+        live_ops.begin("user", message)
+        try:
+            return await core.run(message, actor="user", on_status=_on_status, world_id=world_id)
+        finally:
+            live_ops.end()
 
     try:
         reply = _run_async(_go())
@@ -173,8 +186,151 @@ def api_activity():
     from agent import store
     return jsonify({
         "traces": _safe(lambda: trace.recent(25), []),
+        "traces_full": _safe(lambda: trace.recent_full(15), []),
         "actions": _safe(lambda: store.recent_actions(30), []),
         "usage_history": _safe(lambda: store.usage_history(14), []),
+    })
+
+
+@bp.route("/live")
+def api_live():
+    from dashboard import live_ops
+    return jsonify(live_ops.snapshot())
+
+
+@bp.route("/agents")
+def api_agents():
+    from agent import subagent, registry
+    specs = []
+    for name, spec in subagent.SPECIALISTS.items():
+        cats = spec["categories"]
+        tools = [t for t in registry.all_tools() if t.category in cats]
+        specs.append({
+            "id": name,
+            "label": name.title(),
+            "brief": spec["brief"],
+            "categories": sorted(cats),
+            "tool_count": len(tools),
+        })
+    live = _safe(lambda: __import__("dashboard.live_ops", fromlist=["snapshot"]).snapshot(), {})
+    return jsonify({
+        "supervisor": {
+            "id": "supervisor",
+            "label": "Supervisor",
+            "role": "Routes tasks, approves risk, orchestrates specialists",
+            "status": "busy" if live.get("active") else "ready",
+        },
+        "specialists": specs,
+        "total_tools": len(registry.all_tools()),
+        "live": live,
+    })
+
+
+@bp.route("/agents/delegate", methods=["POST"])
+def api_delegate():
+    data = request.get_json(silent=True) or {}
+    specialist = (data.get("specialist") or "").strip()
+    task = (data.get("task") or "").strip()
+    world_id = (data.get("world_id") or "").strip() or None
+    if not specialist or not task:
+        return jsonify({"error": "specialist and task are required"}), 400
+    from agent import subagent
+    from dashboard import live_ops
+
+    async def _on_status(text: str):
+        live_ops.set_phase(text)
+
+    async def _go():
+        live_ops.begin(f"subagent:{specialist}", task)
+        try:
+            return await subagent.run_subagent(
+                specialist, task, actor="user", on_status=_on_status, world_id=world_id,
+            )
+        finally:
+            live_ops.end()
+
+    try:
+        result = _run_async(_go())
+    except Exception as e:
+        logger.exception("delegate failed")
+        return jsonify({"error": str(e)[:500]}), 500
+    return jsonify(result)
+
+
+@bp.route("/world")
+def api_world():
+    from memory import world_model
+    from agent import about, registry, store
+    from collections import Counter
+    from dashboard import graph_viz
+    from memory import worlds as hierarchical_worlds
+    snap = _safe(world_model.build_snapshot, {})
+    tree = _safe(hierarchical_worlds.get_tree, {})
+    cats = Counter(t.category for t in registry.all_tools())
+    graph = _safe(
+        lambda: graph_viz.build_world_graph(snap, store.list_goals("active"), tree),
+        {},
+    )
+    return jsonify({
+        "snapshot": snap,
+        "worlds": tree,
+        "tools_by_category": dict(sorted(cats.items(), key=lambda kv: -kv[1])),
+        "total_tools": len(registry.all_tools()),
+        "about": _safe(about.describe, {}),
+        "graph": graph,
+    })
+
+
+@bp.route("/graph/runtime")
+def api_graph_runtime():
+    from agent import subagent
+    from dashboard import graph_viz, live_ops
+    live = live_ops.snapshot()
+    specs = subagent.list_specialists()
+    return jsonify(graph_viz.build_runtime_graph(live, specs))
+
+
+@bp.route("/graph/world")
+def api_graph_world():
+    from memory import world_model
+    from agent import store
+    from dashboard import graph_viz
+    from memory import worlds as hierarchical_worlds
+    snap = _safe(world_model.build_snapshot, {})
+    goals = _safe(lambda: store.list_goals("active"), [])
+    tree = _safe(hierarchical_worlds.get_tree, {})
+    previews = {}
+    root = tree.get("root")
+    if root:
+        previews[root["id"]] = _safe(
+            lambda: hierarchical_worlds.snapshot_block(root["id"], max_chars=1600), ""
+        )
+    for child in tree.get("children") or []:
+        cid = child.get("id")
+        if cid:
+            previews[cid] = _safe(
+                lambda c=cid: hierarchical_worlds.snapshot_block(c, max_chars=1600), ""
+            )
+    return jsonify({
+        "snapshot": snap,
+        "worlds": tree,
+        "graph": graph_viz.build_world_graph(snap, goals, tree),
+        "hierarchy_graph": graph_viz.build_world_hierarchy_graph(tree),
+        "world_previews": previews,
+    })
+
+
+@bp.route("/graph/memory")
+def api_graph_memory():
+    from memory import graph as kg
+    from memory.vector_store import collections_overview
+    from dashboard import graph_viz
+    kg_data = _safe(lambda: kg.export_graph(), {"entities": [], "relations": []})
+    cols = _safe(lambda: collections_overview(samples_per=4), [])
+    return jsonify({
+        "knowledge_graph": kg_data,
+        "collections": cols,
+        "graph": graph_viz.build_memory_graph(kg_data, cols),
     })
 
 
@@ -228,5 +384,53 @@ def api_upload():
     if extracted:
         message += f"\n\n[DOCUMENT CONTENT]\n{extracted[:50000]}"
     from agent import core
-    reply = _run_async(core.run(message, actor="user"))
+    world_id = (request.form.get("world_id") or "").strip() or None
+    reply = _run_async(core.run(message, actor="user", world_id=world_id))
     return jsonify({"reply": reply, "filename": f.filename})
+
+
+@bp.route("/worlds")
+def api_worlds_list():
+    from memory import worlds as hierarchical_worlds
+    return jsonify(hierarchical_worlds.get_tree())
+
+
+@bp.route("/worlds", methods=["POST"])
+def api_worlds_create():
+    from memory import worlds as hierarchical_worlds
+    data = request.get_json(silent=True) or {}
+    name = (data.get("name") or "").strip()
+    if not name:
+        return jsonify({"error": "name is required"}), 400
+    try:
+        w = hierarchical_worlds.create_world(
+            name=name,
+            kind=(data.get("kind") or "project").strip(),
+            description=(data.get("description") or "").strip(),
+            context=(data.get("context") or "").strip(),
+        )
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    return jsonify({"world": w, "tree": hierarchical_worlds.get_tree()})
+
+
+@bp.route("/worlds/<world_id>", methods=["PATCH"])
+def api_worlds_update(world_id):
+    from memory import worlds as hierarchical_worlds
+    data = request.get_json(silent=True) or {}
+    w = _safe(lambda: hierarchical_worlds.update_world(world_id, **data), None)
+    if not w:
+        return jsonify({"error": "world not found"}), 404
+    return jsonify({"world": w, "tree": hierarchical_worlds.get_tree()})
+
+
+@bp.route("/worlds/<world_id>", methods=["DELETE"])
+def api_worlds_delete(world_id):
+    from memory import worlds as hierarchical_worlds
+    try:
+        ok = hierarchical_worlds.delete_world(world_id)
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    if not ok:
+        return jsonify({"error": "world not found"}), 404
+    return jsonify({"ok": True, "tree": hierarchical_worlds.get_tree()})

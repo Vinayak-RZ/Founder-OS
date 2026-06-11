@@ -69,6 +69,11 @@ def add_tool_event(name: str, args: dict, decision: str, result):
     t.add("tool", {"name": name, "decision": decision,
                    "args": {k: str(v)[:120] for k, v in (args or {}).items()},
                    "result_preview": (preview or "")[:300]})
+    try:
+        from dashboard.live_ops import add_tool
+        add_tool(name, decision)
+    except Exception:
+        pass
 
 
 def finish(final_text: str):
@@ -80,20 +85,56 @@ def finish(final_text: str):
     return None
 
 
-def recent(n: int = 5) -> list:
-    """Return the last n traces from today's file (newest first)."""
+def _read_recent_lines(n: int) -> list:
     path = os.path.join(TRACE_DIR, time.strftime("%Y-%m-%d") + ".jsonl")
     if not os.path.exists(path):
         return []
     try:
         with open(path, "r", encoding="utf-8") as f:
-            lines = f.readlines()[-n:]
+            return f.readlines()[-n:]
+    except Exception:
+        return []
+
+
+def recent(n: int = 5) -> list:
+    """Return the last n traces from today's file (newest first)."""
+    try:
         out = []
-        for ln in reversed(lines):
+        for ln in reversed(_read_recent_lines(n)):
             r = json.loads(ln)
             out.append({"id": r["id"], "actor": r["actor"], "message": r["message"][:100],
                         "tools": [e["data"]["name"] for e in r["events"] if e["type"] == "tool"],
                         "duration_s": r["duration_s"]})
+        return out
+    except Exception:
+        return []
+
+
+def recent_full(n: int = 12) -> list:
+    """Full trace records including tool events (for activity visualization)."""
+    try:
+        out = []
+        for ln in reversed(_read_recent_lines(n)):
+            r = json.loads(ln)
+            events = []
+            for e in r.get("events", []):
+                if e.get("type") == "tool":
+                    d = e.get("data", {})
+                    events.append({
+                        "t": e.get("t", 0),
+                        "name": d.get("name", ""),
+                        "decision": d.get("decision", ""),
+                        "preview": (d.get("result_preview") or "")[:120],
+                    })
+            out.append({
+                "id": r["id"],
+                "actor": r["actor"],
+                "message": r["message"][:200],
+                "final": (r.get("final") or "")[:200],
+                "duration_s": r.get("duration_s", 0),
+                "ts": r.get("ts"),
+                "events": events,
+            })
         return out
     except Exception:
         return []

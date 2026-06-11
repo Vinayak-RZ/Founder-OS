@@ -1,35 +1,78 @@
-/* Tokens from DESIGN.md (Ferrari design system) */
-:root {
-  --color-primary: #da291c;
-  --color-primary-active: #b01e0a;
-  --color-primary-hover: #9d2211;
-  --color-ink: #ffffff;
-  --color-body: #969696;
-  --color-body-strong: #ffffff;
-  --color-body-on-light: #181818;
-  --color-muted: #666666;
-  --color-muted-soft: #8f8f8f;
-  --color-hairline: #303030;
-  --color-hairline-on-light: #d2d2d2;
-  --color-hairline-soft: #ebebeb;
-  --color-canvas: #181818;
-  --color-canvas-elevated: #303030;
-  --color-canvas-light: #ffffff;
-  --color-surface-card: #303030;
-  --color-surface-soft-light: #f7f7f7;
-  --color-on-primary: #ffffff;
-  --color-accent-yellow: #f6e500;
-  --color-semantic-info: #4c98b9;
-  --color-semantic-success: #03904a;
-  --color-semantic-warning: #f13a2c;
+/* Forge Industrial v2.0 — Stamped Energy (Deisgn_Stamped_Energy_original.md) */
 
-  --font-sans: "Inter", -apple-system, system-ui, sans-serif;
+:root {
+  /* Brand */
+  --color-primary: #f75440;
+  --color-primary-active: #d94330;
+  --color-primary-hover: #e04a38;
+  --color-on-primary: #ffffff;
+  --color-primary-container: #f75440;
+  --color-inverse-primary: #ffb4a8;
+
+  --color-secondary: #051f13;
+  --color-on-secondary: #ffffff;
+  --color-secondary-container: #ccead6;
+
+  --color-tertiary: #00666b;
+  --color-on-tertiary: #ffffff;
+
+  /* Surfaces — light operational UI */
+  --color-background: #f7faf5;
+  --color-surface: #f7faf5;
+  --color-surface-low: #f1f4f0;
+  --color-surface-dim: #d8dbd6;
+  --color-surface-container: #ecefea;
+  --color-surface-container-high: #e6e9e4;
+
+  --color-on-surface: #191c1a;
+  --color-on-surface-variant: #5a403c;
+  --color-outline: #8f706b;
+  --color-outline-variant: #e3beb8;
+
+  --color-inverse-surface: #2d312e;
+  --color-inverse-on-surface: #eff2ed;
+
+  --color-error: #ba1a1a;
+  --color-semantic-success: #03904a;
+  --color-semantic-info: #00666b;
+  --color-semantic-warning: #f75440;
+
+  /* Semantic aliases (used across app.css / components.css) */
+  --color-canvas: var(--color-surface);
+  --color-canvas-elevated: #ffffff;
+  --color-canvas-light: #ffffff;
+  --color-surface-card: #ffffff;
+  --color-surface-soft-light: var(--color-surface-low);
+
+  --color-ink: var(--color-on-surface);
+  --color-body: var(--color-on-surface-variant);
+  --color-body-strong: var(--color-on-surface);
+  --color-body-on-light: var(--color-on-surface);
+  --color-muted: var(--color-outline);
+  --color-muted-soft: #8f8f8f;
+  --color-hairline: var(--color-outline-variant);
+  --color-hairline-on-light: var(--color-outline-variant);
+  --color-hairline-soft: var(--color-surface-container);
+
+  /* Active / focus — coral per HIW dock */
+  --color-accent-yellow: var(--color-primary);
+  --color-accent: var(--color-primary);
+
+  /* Typography */
+  --font-display: "Plus Jakarta Sans", var(--font-sans-fallback);
+  --font-sans-fallback: -apple-system, system-ui, sans-serif;
+  --font-sans: "Inter", var(--font-sans-fallback);
   --font-mono: "JetBrains Mono", ui-monospace, monospace;
 
-  --rounded-none: 0px;
+  /* Radius — industrial, not sharp squares */
+  --rounded-none: 0;
   --rounded-sm: 4px;
+  --rounded-md: 8px;
+  --rounded-lg: 16px;
+  --rounded-xl: 24px;
   --rounded-full: 9999px;
 
+  /* Spacing — 4px baseline */
   --space-xxxs: 4px;
   --space-xxs: 8px;
   --space-xs: 16px;
@@ -40,8 +83,18 @@
   --space-xxl: 96px;
   --space-super: 128px;
 
-  --gradient-rosso: linear-gradient(180deg, #a00c01, #da291c 64%);
-  --gradient-dark: linear-gradient(180deg, #3c3c3c, #030303 64%);
+  /* Gradients */
+  --gradient-rosso: linear-gradient(160deg, #f75440 0%, #d94330 100%);
+  --gradient-dark: linear-gradient(180deg, #0a2a1a 0%, var(--color-secondary) 64%);
+  --gradient-hero-glow: radial-gradient(
+    circle at 50% 0%,
+    color-mix(in srgb, var(--color-primary) 12%, transparent),
+    transparent 60%
+  );
 
   --sidebar-w: 260px;
+
+  /* Elevation — borders, minimal shadow */
+  --shadow-hard: 0 4px 0 color-mix(in srgb, #000 10%, transparent);
+  --shadow-card: 0 20px 48px -28px color-mix(in srgb, var(--color-primary) 18%, transparent);
 }

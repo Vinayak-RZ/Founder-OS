@@ -4,7 +4,7 @@
 product
 
 ## Users & purpose
-Solo founders and small-team operators who run Founder OS as an autonomous chief-of-staff. They open the web UI daily to chat with the agent, approve risky actions, scan CRM and runway, and review what the system did overnight. Primary job: stay oriented and in control without living in Telegram.
+Vinayak Raizada runs Founder OS as a personal command console for Stamped Energy and parallel idea research. The web UI is the primary surface: chat with the supervisor, delegate to specialist agents, watch live tool/decision flow, approve risky actions, and scan world state (CRM, runway, tools, activity). Primary job: operate the startup and explore new ideas with full visibility into what the agents are doing.
 
 ## Brand personality
 Capable, calm, direct. A serious operator console — not a toy chatbot, not enterprise bloat. Feels like a well-built internal tool from a company that ships.

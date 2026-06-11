@@ -15,7 +15,7 @@ from agent.loop import execute_loop
 import agent.tools  # noqa: F401 — importing registers every tool
 from agent.store import set_plan_status
 from memory.vector_store import add as vec_add, search_all
-from memory import world_model
+from memory import worlds as hierarchical_worlds
 from config import config
 
 logger = logging.getLogger(__name__)
@@ -37,7 +37,7 @@ def _memory_context(message: str) -> str:
 
 
 async def run(user_message: str, image_context: str = "", actor: str = "user",
-              on_status=None) -> str:
+              on_status=None, world_id: str | None = None) -> str:
     """Process one user turn through plan -> execute -> verify and return the reply."""
     if config.agent_paused:
         return "⏸ I'm paused right now (AGENT_PAUSED is on). Turn it off to let me act again."
@@ -49,7 +49,7 @@ async def run(user_message: str, image_context: str = "", actor: str = "user",
 
     mem_ctx = _memory_context(user_message)
     try:
-        world_ctx = world_model.snapshot_block()
+        world_ctx = hierarchical_worlds.snapshot_block(world_id)
     except Exception:
         world_ctx = ""
     extra = "\n\n".join(x for x in [world_ctx, mem_ctx] if x)
