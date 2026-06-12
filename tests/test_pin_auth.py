@@ -1,4 +1,4 @@
-from types import SimpleNamespace
+from config import config as app_config
 
 from dashboard.auth import path_exempt, pin_required, verify_pin
 
@@ -11,11 +11,11 @@ def test_path_exempt():
 
 
 def test_verify_pin(monkeypatch):
-    monkeypatch.setattr("config.config", SimpleNamespace(dashboard_pin="482910"))
+    monkeypatch.setattr(app_config, "dashboard_pin", "482910")
     assert verify_pin("482910")
     assert not verify_pin("000000")
 
 
 def test_pin_required_empty(monkeypatch):
-    monkeypatch.setattr("config.config", SimpleNamespace(dashboard_pin=""))
+    monkeypatch.setattr(app_config, "dashboard_pin", "")
     assert not pin_required()

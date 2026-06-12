@@ -1,11 +1,11 @@
 """Integration tests for dashboard HTTP API (auth gate + core routes)."""
 from __future__ import annotations
 
-from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
 
+from config import config as app_config
 from dashboard.auth import path_exempt, verify_pin
 
 TEST_PIN = "482910"
@@ -13,16 +13,14 @@ TEST_PIN = "482910"
 
 @pytest.fixture
 def pin_config(monkeypatch):
-    cfg = SimpleNamespace(dashboard_pin=TEST_PIN)
-    monkeypatch.setattr("config.config", cfg)
-    return cfg
+    monkeypatch.setattr(app_config, "dashboard_pin", TEST_PIN)
+    return TEST_PIN
 
 
 @pytest.fixture
 def no_pin_config(monkeypatch):
-    cfg = SimpleNamespace(dashboard_pin="")
-    monkeypatch.setattr("config.config", cfg)
-    return cfg
+    monkeypatch.setattr(app_config, "dashboard_pin", "")
+    return ""
 
 
 @pytest.fixture

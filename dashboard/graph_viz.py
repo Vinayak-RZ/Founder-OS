@@ -4,6 +4,14 @@ import re
 from config import config
 
 
+def _founder_name() -> str:
+    return getattr(config, "my_name", None) or "Founder"
+
+
+def _company_name() -> str:
+    return getattr(config, "company_name", None) or "Company"
+
+
 def _nid(*parts: str) -> str:
     raw = ":".join(p for p in parts if p)
     return re.sub(r"[^a-zA-Z0-9:_-]", "_", raw)[:120]
@@ -25,8 +33,8 @@ def build_runtime_graph(live: dict | None = None, specialists: list | None = Non
     """Founder → supervisor → specialists → live tools."""
     live = live or {}
     specialists = specialists or []
-    founder = config.my_name or "Founder"
-    company = config.company_name or "Company"
+    founder = _founder_name()
+    company = _company_name()
 
     nodes = [
         _node("founder", founder, "founder", subtitle=company),
@@ -78,7 +86,7 @@ def build_runtime_graph(live: dict | None = None, specialists: list | None = Non
 def build_world_hierarchy_graph(world_tree: dict | None = None) -> dict:
     """Clean founder → main world → sub-worlds tree for the Worlds UI."""
     world_tree = world_tree or {}
-    founder = config.my_name or "Founder"
+    founder = _founder_name()
     root_w = world_tree.get("root")
     children = world_tree.get("children") or []
 
@@ -123,8 +131,8 @@ def build_world_graph(snapshot: dict | None = None, goals: list | None = None,
     """Business world: hierarchy + founder, company, CRM, goals, tasks."""
     snap = snapshot or {}
     goals = goals or []
-    founder = config.my_name or "Founder"
-    company = config.company_name or "Company"
+    founder = _founder_name()
+    company = _company_name()
     world_tree = world_tree or {}
 
     nodes = []
