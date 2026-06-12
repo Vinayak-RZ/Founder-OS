@@ -12,15 +12,17 @@ for _stream in (sys.stdout, sys.stderr):
         pass
 
 from config import config
+from memory.paths import ensure_data_dirs, subpath
 
-os.makedirs("./data/logs", exist_ok=True)
+ensure_data_dirs()
+_log_file = subpath("logs", "founder_os.log")
 
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     handlers=[
         logging.StreamHandler(),
-        logging.FileHandler("./data/logs/founder_os.log", encoding="utf-8"),
+        logging.FileHandler(_log_file, encoding="utf-8"),
     ],
 )
 logger = logging.getLogger(__name__)

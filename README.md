@@ -431,25 +431,30 @@ Running in web-only mode. Open the Web UI in your browser.
 
 Open the URL in your browser. Use the top bar to pick a **world**, chat with **Pulse** or another specialist, and explore **Worlds** → vault panel to link your first docs repo.
 
-### 5.6 Deployment (AWS target)
+### 5.6 Deployment (AWS — EC2 + S3 + Qdrant Cloud)
 
-Planned production layout for a **single-user** deployment:
+Production layout for a **single-user** cloud deployment (works from any device via HTTPS):
 
-| Component | AWS service | Purpose |
-|-----------|-------------|---------|
-| App process | **EC2** (e.g. `t3.small`) | Flask dashboard + agent loop + scheduler; Docker or `systemd` |
-| Vault files & backups | **S3** bucket | Sync `data/knowledge/`, nightly brain backups, exported PDFs |
-| Secrets | **SSM Parameter Store** or `.env` on instance | API keys, Gmail app password, Qdrant credentials |
-| Vector DB | **Qdrant Cloud** (recommended) or self-hosted on EC2 | Vault domain collections |
+| Component | AWS / service | Purpose |
+|-----------|---------------|---------|
+| **Compute** | EC2 (`t3.small`+) | Gunicorn + agent scheduler (`run_production.py`) |
+| **Object storage** | S3 | Vault document payloads (IAM role on EC2 — no keys on disk) |
+| **Vectors** | Qdrant Cloud | Semantic memory + vault catalog search |
+| **App state** | EBS volume | SQLite DB, OAuth tokens, logs (`FOUNDER_OS_DATA`) |
+| **TLS** | nginx + Certbot | Public HTTPS; Gunicorn stays on `127.0.0.1:8787` |
 
-Suggested env on EC2:
+**Full step-by-step guide:** [`deploy/aws/README.md`](deploy/aws/README.md)
 
-- `WEB_UI_ENABLED=true`, `TELEGRAM_ENABLED=false`
-- `KNOWLEDGE_VAULT_ROOT` → EBS volume path, with S3 sync cron for durability
-- Reverse proxy (nginx/Caddy) + TLS in front of `DASHBOARD_PORT`
-- Restrict security group to your IP only — this is a personal console, not a public multi-tenant app
+Quick checklist:
 
-Local development stays the same: `python main.py` → `http://127.0.0.1:8787`.
+1. Create S3 bucket + IAM instance profile (`deploy/aws/iam-s3-policy.json`)
+2. Launch Ubuntu EC2 with Elastic IP; security group: 22/80/443
+3. Clone repo to `/opt/founder-os`, run `sudo bash deploy/aws/bootstrap.sh`
+4. Copy `deploy/aws/env.production.example` → `/etc/founder-os/env` and fill in keys
+5. nginx + `certbot --nginx`; set `PUBLIC_BASE_URL` and `BEHIND_PROXY=true`
+6. `systemctl enable --now founder-os` — verify `curl https://your-domain/api/health`
+
+Local development is unchanged: `python main.py` → `http://127.0.0.1:8787`.
 
 ### Optional capabilities (lazy-loaded — install only what you want)
 

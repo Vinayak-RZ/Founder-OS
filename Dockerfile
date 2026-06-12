@@ -23,4 +23,5 @@ COPY . .
 RUN mkdir -p data
 VOLUME ["/app/data"]
 
-CMD ["python", "main.py"]
+# Dev: python main.py  |  Production: run_production.py (Gunicorn)
+CMD ["python", "run_production.py"]

@@ -76,6 +76,16 @@ def _public_config():
     }
 
 
+@bp.route("/health")
+def api_health():
+    """Load balancer / uptime check — no auth (safe: no secrets in response)."""
+    from integrations import object_storage
+    return jsonify({
+        "ok": True,
+        "storage": "s3" if object_storage.s3_enabled() else "local",
+    })
+
+
 @bp.route("/state")
 def api_state():
     return jsonify(collect_state())

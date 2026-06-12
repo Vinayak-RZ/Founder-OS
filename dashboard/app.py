@@ -22,6 +22,19 @@ _STATIC = os.path.join(os.path.dirname(__file__), "static")
 app = Flask(__name__, static_folder=_STATIC, static_url_path="/static")
 app.register_blueprint(api_bp)
 
+def _behind_proxy() -> bool:
+    try:
+        from config import config
+        return config.behind_proxy
+    except Exception:
+        return os.getenv("BEHIND_PROXY", "").strip().lower() in ("1", "true", "yes", "on")
+
+
+if _behind_proxy():
+    from werkzeug.middleware.proxy_fix import ProxyFix
+
+    app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)
+
 
 @app.route("/")
 def index():
