@@ -18,10 +18,13 @@ MAX_STEPS = 8
 
 async def execute_loop(messages: list, schemas: list, actor: str = "agent",
                        on_status=None, tools_used: list = None,
-                       max_steps: int = MAX_STEPS) -> str:
+                       max_steps: int = MAX_STEPS,
+                       should_cancel=None) -> str:
     """Run the tool-calling loop until the model returns a final answer."""
     tools_used = tools_used if tools_used is not None else []
     for _ in range(max_steps):
+        if should_cancel and should_cancel():
+            return "⏹ Stopped by user."
         try:
             resp = await complete_with_tools(messages, schemas)
         except Exception as e:
@@ -34,6 +37,8 @@ async def execute_loop(messages: list, schemas: list, actor: str = "agent",
             return (resp.get("content") or "").strip()
 
         for tc in calls:
+            if should_cancel and should_cancel():
+                return "⏹ Stopped by user."
             name, args, call_id = tc["name"], tc["arguments"], tc["id"]
             tools_used.append(name)
             tool = registry.get(name)

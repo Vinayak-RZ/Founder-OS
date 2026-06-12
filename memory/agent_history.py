@@ -300,6 +300,35 @@ def artifact_file_path(artifact_id: int) -> str | None:
     return None
 
 
+def read_artifact_text(artifact_id: int) -> str | None:
+    path = artifact_file_path(artifact_id)
+    if not path:
+        return None
+    ext = os.path.splitext(path)[1].lower()
+    if ext not in (".md", ".txt", ".markdown"):
+        return None
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            return f.read()
+    except OSError:
+        return None
+
+
+def write_artifact_text(artifact_id: int, content: str) -> bool:
+    path = artifact_file_path(artifact_id)
+    if not path:
+        return False
+    ext = os.path.splitext(path)[1].lower()
+    if ext not in (".md", ".txt", ".markdown"):
+        return False
+    try:
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(content or "")
+        return True
+    except OSError:
+        return False
+
+
 def list_sessions(limit: int = 40, world_id: str | None = None) -> list[dict]:
     init_agent_history_db()
     conn = get_conn()

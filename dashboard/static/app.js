@@ -94,9 +94,216 @@ function chatPayload(extra = {}) {
     world_id: currentWorldId(),
     rag_mode: currentRagMode(),
     session_id: chatSessionId() || undefined,
-    specialist: currentSpecialistId() || "supervisor",
+    specialist: currentSpecialistId() || undefined,
     ...extra,
   };
+}
+
+function sleep(ms) {
+  return new Promise(r => setTimeout(r, ms));
+}
+
+function renderMessageHtml(m) {
+  if (m.pending) {
+    return `<div class="msg-pending"><span class="live-pulse" aria-hidden="true"></span> ${esc(m.pendingLabel || "Agent working…")}</div>`;
+  }
+  const text = m.text || "";
+  if (m.role === "agent" || m.role === "assistant") {
+    const md = window.FOSMarkdown?.render?.(text) || esc(text);
+    const arts = (m.artifacts || []).map(a =>
+      `<button type="button" class="button-outline-on-dark button-sm md-artifact-btn" data-md-artifact="${a.id}">${esc(a.title || a.kind || "Document")}</button>`
+    ).join("");
+    return `<div class="msg-md">${md}</div>${arts ? `<div class="msg-artifacts">${arts}</div>` : ""}`;
+  }
+  return esc(text);
+}
+
+function renderArtifactLinks(artifacts) {
+  if (!artifacts?.length) return "";
+  return `<div class="msg-artifacts">${artifacts.map(a =>
+    `<button type="button" class="button-outline-on-dark button-sm md-artifact-btn" data-md-artifact="${a.id}">${esc(a.title || a.kind || "File")}</button>
+     <a class="button-tertiary-text button-sm" href="${esc(a.download_url || `/api/artifacts/${a.id}/file`)}" target="_blank" rel="noopener">Download</a>`
+  ).join("")}</div>`;
+}
+
+async function loadChatSessionsList() {
+  const wid = currentWorldId();
+  const q = wid && wid !== "root" ? `?world_id=${encodeURIComponent(wid)}` : "";
+  try {
+    const data = await api(`/history${q}`, { timeoutMs: 15000 });
+    state._chatSessions = data.sessions || [];
+  } catch (_) {
+    state._chatSessions = state._chatSessions || [];
+  }
+}
+
+function renderChatSessionsList() {
+  const sessions = state._chatSessions || [];
+  const active = chatSessionId();
+  const items = sessions.map(s => `
+    <button type="button" class="chat-session-item${s.id === active ? " is-active" : ""}" data-chat-session="${esc(s.id)}">
+      <span class="chat-session-item__title">${esc(s.title || "Conversation")}</span>
+      <span class="chat-session-item__meta muted">${fmtHistoryTime(s.updated_at)}</span>
+    </button>`).join("");
+  return `<aside class="chat-sessions driver-card">
+    <div class="chat-sessions__head">
+      <p class="caption-uppercase">Chats</p>
+      <button type="button" class="button-primary button-sm" data-new-chat-session>+ New</button>
+    </div>
+    <div class="chat-sessions__list">${items || "<p class='muted body-md'>No chats yet</p>"}</div>
+  </aside>`;
+}
+
+let mdEditorState = { artifactId: null, editMode: false };
+
+async function openMdEditor(artifactId) {
+  const dlg = document.getElementById("md-editor-dialog");
+  if (!dlg) return;
+  try {
+    const data = await api(`/artifacts/${artifactId}/content`, { timeoutMs: 15000 });
+    mdEditorState = { artifactId, editMode: false };
+    $("#md-dialog-title").textContent = data.title || "Markdown";
+    $("#md-dialog-source").value = data.content || "";
+    $("#md-dialog-preview").innerHTML = window.FOSMarkdown?.render?.(data.content) || esc(data.content);
+    $("#md-dialog-source").hidden = true;
+    $("#md-dialog-preview").hidden = false;
+    $("#md-dialog-save").hidden = true;
+    $("#md-dialog-mode").textContent = "Edit";
+    dlg.showModal();
+  } catch (e) {
+    alert(e.message || "Could not open file");
+  }
+}
+
+async function saveMdEditor() {
+  if (!mdEditorState.artifactId) return;
+  const content = $("#md-dialog-source")?.value ?? "";
+  await api(`/artifacts/${mdEditorState.artifactId}/content`, {
+    method: "PUT",
+    body: JSON.stringify({ content }),
+    timeoutMs: 15000,
+  });
+  $("#md-dialog-preview").innerHTML = window.FOSMarkdown?.render?.(content) || esc(content);
+  mdEditorState.editMode = false;
+  $("#md-dialog-source").hidden = true;
+  $("#md-dialog-preview").hidden = false;
+  $("#md-dialog-save").hidden = true;
+  $("#md-dialog-mode").textContent = "Edit";
+}
+
+function initMdEditorDialog() {
+  $("#md-dialog-close")?.addEventListener("click", () => $("#md-editor-dialog")?.close());
+  $("#md-dialog-mode")?.addEventListener("click", () => {
+    mdEditorState.editMode = !mdEditorState.editMode;
+    const src = $("#md-dialog-source");
+    const prev = $("#md-dialog-preview");
+    if (mdEditorState.editMode) {
+      src.hidden = false;
+      prev.hidden = true;
+      $("#md-dialog-save").hidden = false;
+      $("#md-dialog-mode").textContent = "Preview";
+    } else {
+      const content = src?.value ?? "";
+      prev.innerHTML = window.FOSMarkdown?.render?.(content) || esc(content);
+      src.hidden = true;
+      prev.hidden = false;
+      $("#md-dialog-save").hidden = true;
+      $("#md-dialog-mode").textContent = "Edit";
+    }
+  });
+  $("#md-dialog-save")?.addEventListener("click", () => saveMdEditor().catch(e => alert(e.message)));
+}
+
+async function pollAgentJob(jobId) {
+  while (true) {
+    const data = await api(`/chat/jobs/${encodeURIComponent(jobId)}`, { timeoutMs: 20000 });
+    const job = data.job;
+    if (!job) break;
+    state._activeJob = job;
+    patchLiveUI(state.live);
+    patchChatJobBubble(job);
+    if (["completed", "failed", "cancelled"].includes(job.status)) {
+      return { job, pending_approvals: data.pending_approvals };
+    }
+    await sleep(1200);
+  }
+  return null;
+}
+
+function patchChatJobBubble(job) {
+  const idx = chatHistory.findIndex(m => m.jobId === job.id);
+  if (idx < 0) return;
+  if (job.status === "running") {
+    chatHistory[idx].pending = true;
+    chatHistory[idx].pendingLabel = job.phase || "Agent working…";
+  } else {
+    chatHistory[idx].pending = false;
+    chatHistory[idx].text = job.result || job.error || "(no response)";
+    chatHistory[idx].artifacts = job.artifacts || [];
+    if (job.session_id) setChatSessionId(job.session_id);
+  }
+  const el = $("#chat-messages");
+  if (el && currentView === "chat") {
+    el.innerHTML = renderChatMessagesInner();
+    el.scrollTop = el.scrollHeight;
+  }
+  updateLiveStrip({ active: job.status === "running", phase: job.phase });
+  $$("#chat-live-panel-phase, [id$='-phase']").forEach(n => {
+    if (n) n.textContent = job.phase || "Idle";
+  });
+}
+
+function renderChatMessagesInner() {
+  const empty = !chatHistory.length;
+  if (empty) return "";
+  return chatHistory.map(m =>
+    `<div class="msg ${m.role}${m.pending ? " is-pending" : ""}"><div class="msg-bubble">${renderMessageHtml(m)}</div></div>`
+  ).join("");
+}
+
+async function startAgentJob(message, { direct = false, specId = "" } = {}) {
+  const payload = chatPayload({ message });
+  if (direct && specId) payload.specialist = specId;
+  const started = await api("/chat/async", {
+    method: "POST",
+    body: JSON.stringify(payload),
+    timeoutMs: 20000,
+  });
+  const job = started.job;
+  chatHistory.push({ role: "agent", text: "", pending: true, jobId: job.id, pendingLabel: job.phase || "Starting…" });
+  localStorage.setItem("fos_chat", JSON.stringify(chatHistory));
+  state._activeJob = job;
+  render();
+  startLivePoll();
+  try {
+    const done = await pollAgentJob(job.id);
+    if (done?.job?.session_id) setChatSessionId(done.job.session_id);
+    if (done?.pending_approvals) {
+      state.approvals = done.pending_approvals;
+      updateBadges();
+    }
+    localStorage.setItem("fos_chat", JSON.stringify(chatHistory));
+    await loadChatSessionsList();
+  } finally {
+    state._activeJob = null;
+    pollLive();
+    if (currentView === "chat") render();
+  }
+}
+
+async function cancelActiveJob(jobId) {
+  const id = jobId || state._activeJob?.id;
+  if (!id) return;
+  try {
+    await api(`/chat/jobs/${encodeURIComponent(id)}/cancel`, { method: "POST", timeoutMs: 10000 });
+    if (state._activeJob?.id === id) {
+      await pollAgentJob(id);
+    } else {
+      pollLive();
+    }
+  } catch (e) {
+    alert(e.message);
+  }
 }
 
 let chatHistory = readJsonStorage("fos_chat", []);
@@ -472,18 +679,43 @@ function renderLiveFlow(events, emptyLabel = "Waiting for activity…") {
 }
 
 function renderLivePanel(live, id = "live-panel") {
-  const active = live?.active;
+  const jobs = live?.jobs?.length ? live.jobs : (live?.active ? [live] : []);
+  const active = jobs.some(j => j.active || j.status === "running") || live?.active;
+  const primary = jobs[0] || live || {};
+  const events = primary.events || live?.events || [];
+  const phaseOpts = events.map((e, i) =>
+    `<option value="${i}"${i === events.length - 1 ? " selected" : ""}>${esc(e.label || e.name || "Step")}</option>`
+  ).join("");
+  const jobCards = jobs.length ? jobs.map(j => `
+    <div class="live-job${j.active || j.status === "running" ? " is-active" : ""}">
+      <div class="live-job__head">
+        <span class="mono">${esc(j.specialist || j.mode || "agent")}</span>
+        <span class="muted">${j.elapsed_s || 0}s</span>
+      </div>
+      <p class="live-job__phase">${esc(j.phase || "Working…")}</p>
+      ${(j.active || j.status === "running") ? `<button type="button" class="button-outline-on-dark button-sm" data-cancel-job="${esc(j.id)}">Stop</button>` : `<span class="badge-pill">${esc(j.status || "done")}</span>`}
+    </div>`).join("") : "";
   return `<section class="live-panel${active ? " is-active" : ""}" id="${id}" aria-live="polite">
-    <p class="caption-uppercase">Live operation</p>
-    <p class="live-phase" id="${id}-phase">${esc(live?.phase || "Idle — send a message or delegate a task")}</p>
-    <div id="${id}-flow">${renderLiveFlow(live?.events || [])}</div>
-    ${active && live.elapsed_s ? `<p class="world-meta">${live.elapsed_s}s elapsed · ${esc(live.actor)}</p>` : ""}
+    <div class="live-panel__head">
+      <p class="caption-uppercase">Live operation</p>
+      ${active && primary.id ? `<button type="button" class="button-outline-on-dark button-sm" data-cancel-job="${esc(primary.id)}">Stop</button>` : ""}
+    </div>
+    <p class="live-phase" id="${id}-phase">${esc(primary.phase || live?.phase || "Idle — send a message or delegate a task")}</p>
+    ${events.length ? `<label class="live-phase-select"><span class="caption-uppercase">Step</span>
+      <select class="world-select" id="${id}-step" aria-label="Current step">${phaseOpts}</select></label>` : ""}
+    <div id="${id}-flow">${renderLiveFlow(events)}</div>
+    ${jobCards ? `<div class="live-jobs">${jobCards}</div>` : ""}
+    ${active && live?.elapsed_s ? `<p class="world-meta">${live.elapsed_s}s elapsed · ${esc(live.actor || primary.specialist || "")}</p>` : ""}
   </section>`;
 }
 
 function agentBusy(live, agentId) {
-  const actor = live?.active ? String(live.actor || "") : "";
+  const jobs = live?.jobs || [];
   const id = String(agentId || "");
+  if (jobs.some(j => (j.status === "running") && (j.specialist === id || (id === "supervisor" && j.mode === "chat")))) {
+    return true;
+  }
+  const actor = live?.active ? String(live.actor || "") : "";
   if (id === "supervisor") return actor === "user";
   return actor === `subagent:${id}` || (id && actor.includes(id));
 }
@@ -1035,7 +1267,8 @@ function patchLiveUI(live) {
 
 async function pollLive() {
   try {
-    const live = await api("/live");
+    const live = await api("/live", { timeoutMs: 15000 });
+    state.live = live;
     patchLiveUI(live);
     if (["dashboard", "agents", "chat"].includes(currentView)) {
       const prevSig = graphDataSignature(state._runtimeGraph, "runtime");
@@ -2003,11 +2236,10 @@ function renderChat() {
   const specs = listSpecialists(agents);
   const ragMode = state.ragMode || "auto";
   const ragMeta = RAG_MODES.find(m => m.id === ragMode) || RAG_MODES[0];
-  const msgs = chatHistory.map(m =>
-    `<div class="msg ${m.role}"><div class="msg-bubble">${esc(m.text)}</div></div>`
-  ).join("");
+  const msgs = renderChatMessagesInner();
   const live = state.live || {};
   const empty = !chatHistory.length;
+  const jobRunning = !!state._activeJob?.active || chatHistory.some(m => m.pending);
   const recentRuns = collectAgentRuns().slice(0, 4);
   return `<div class="chat-shell">
     <header class="chat-header driver-card">
@@ -2018,10 +2250,13 @@ function renderChat() {
       <div class="chat-header__meta">
         <span class="badge-pill" data-active-world-label>${esc(activeWorldLabel())}</span>
         <span class="badge-pill agent-routing-badge">${esc(routeLabel)}</span>
+        ${jobRunning ? `<span class="badge-pill badge-pill--alert">Working</span>` : ""}
         <button type="button" class="button-outline-on-dark button-sm" data-goto="agents">Change specialist</button>
       </div>
     </header>
-    <div class="chat-layout chat-layout--rich">
+    <div class="chat-layout chat-layout--sessions">
+      ${renderChatSessionsList()}
+      <div class="chat-layout chat-layout--rich">
       <div class="chat-wrap">
         <div class="chat-messages${empty ? " is-empty" : ""}" id="chat-messages">
           ${empty ? `<div class="chat-empty">
@@ -2037,12 +2272,13 @@ function renderChat() {
             ${renderRagModeSelect("rag-mode-select")}
           </div>
           <div class="chat-input-row">
-            <textarea class="text-input-on-dark chat-input" id="chat-input" placeholder="${direct ? `Task for ${esc(meta.label)}…` : "Message supervisor…"}" rows="3"></textarea>
-            <button class="button-primary" id="chat-send">${direct ? `Run ${esc(meta.label)}` : "Send"}</button>
+            <textarea class="text-input-on-dark chat-input" id="chat-input" placeholder="${direct ? `Task for ${esc(meta.label)}…` : "Message supervisor…"}" rows="3"${jobRunning ? " disabled" : ""}></textarea>
+            <button class="button-primary" id="chat-send"${jobRunning ? " disabled" : ""}>${direct ? `Run ${esc(meta.label)}` : "Send"}</button>
           </div>
           <div class="chat-toolbar">
             <label class="button-outline-on-dark button-sm upload-label">Upload<input type="file" id="chat-file" hidden accept=".pdf,.docx,.txt,.md,.csv,.json"></label>
-            <button type="button" class="button-outline-on-dark button-sm" id="chat-clear">Clear</button>
+            <button type="button" class="button-outline-on-dark button-sm" data-new-chat-session>New chat</button>
+            ${jobRunning ? `<button type="button" class="button-outline-on-dark button-sm" data-cancel-active-job>Stop</button>` : ""}
             <button type="button" class="button-outline-on-dark button-sm" data-goto="world">Worlds</button>
           </div>
         </div>
@@ -2066,6 +2302,7 @@ function renderChat() {
           ).join("")}</div>
         </section>` : ""}
       </aside>
+      </div>
     </div>
   </div>`;
 }
@@ -2590,6 +2827,7 @@ async function loadViewData(view) {
   if (view === "chat") {
     state._activity = await api("/activity").catch(() => state._activity || {});
     state._agentRunsApi = (await api("/agents/runs").catch(() => ({}))).runs || state._agentRunsApi;
+    await loadChatSessionsList();
     await loadChatFromServer();
     const wid = currentWorldId();
     if (wid && wid !== "root") await ensureVaultForWorld(wid);
@@ -2742,6 +2980,7 @@ function initContentDelegation() {
       + "[data-vault-cancel-doc],[data-vault-edit-doc],[data-vault-delete-doc],[data-vault-reload],"
       + "[data-github-add],[data-github-sync],[data-github-unlink],[data-goal-done],"
       + "[data-history-tab],[data-history-session],[data-open-chat-session],[data-new-chat-session],"
+      + "[data-chat-session],[data-cancel-job],[data-cancel-active-job],[data-md-artifact],"
       + "#chat-send,#chat-clear,#memory-search,#toggle-pause,#agents-vault-search,"
       + "#delegate-selected-btn,#btn-logout,#btn-infra-refresh"
     );
@@ -2841,6 +3080,13 @@ function initContentDelegation() {
       localStorage.setItem("fos_chat", "[]");
       return goView("chat");
     }
+    if (el.dataset.chatSession) {
+      setChatSessionId(el.dataset.chatSession);
+      return loadChatFromServer().then(() => render());
+    }
+    if (el.dataset.cancelJob) return cancelActiveJob(el.dataset.cancelJob);
+    if (el.dataset.cancelActiveJob !== undefined) return cancelActiveJob();
+    if (el.dataset.mdArtifact) return openMdEditor(Number(el.dataset.mdArtifact));
   });
 
   root.addEventListener("submit", e => {
@@ -3288,44 +3534,39 @@ async function delegateAgent() {
   startLivePoll();
   state.agentsTab = "live";
   localStorage.setItem("fos_agents_tab", "live");
+  state._delegateResult = "Agent working…";
+  render();
   try {
-    let result;
-    if (!direct) {
-      const res = await api("/chat", {
-        method: "POST",
-        body: JSON.stringify(chatPayload({ message: task })),
-      });
-      result = res.reply || "(no response)";
-      applyChatSessionResponse(res);
-      if (res.new_approvals?.length) {
-        state.approvals = res.pending_approvals;
-        updateBadges();
-      }
-    } else {
-      const res = await api("/agents/delegate", {
-        method: "POST",
-        body: JSON.stringify(chatPayload({ specialist: specId, task })),
-      });
-      result = typeof res.result === "string" ? res.result : JSON.stringify(res, null, 2);
-      applyChatSessionResponse(res);
-    }
+    const res = await api("/chat/async", {
+      method: "POST",
+      body: JSON.stringify(chatPayload({ message: task, specialist: direct ? specId : undefined })),
+      timeoutMs: 20000,
+    });
+    const done = await pollAgentJob(res.job.id);
+    const job = done?.job;
+    const result = job?.result || job?.error || "(no response)";
     state._delegateResult = result;
     state._delegateDraft = "";
     if (ta) ta.value = "";
-    const runId = `local-${started}`;
+    if (job?.session_id) setChatSessionId(job.session_id);
     persistAgentRun({
-      id: runId,
+      id: job?.run_id || `local-${started}`,
       agent: direct ? specId : "supervisor",
       task,
       result,
-      duration_s: Math.round((Date.now() - started) / 1000),
+      duration_s: job?.elapsed_s || Math.round((Date.now() - started) / 1000),
       ts: Math.floor(started / 1000),
-      tools: [],
-      source: "local",
+      tools: (job?.events || []).filter(e => e.name).map(e => e.name),
+      source: "delegate",
+      artifacts: job?.artifacts,
     });
     state.agentsTab = "runs";
     localStorage.setItem("fos_agents_tab", "runs");
-    state.expandedRunId = runId;
+    state.expandedRunId = job?.run_id || `local-${started}`;
+    if (done?.pending_approvals) {
+      state.approvals = done.pending_approvals;
+      updateBadges();
+    }
   } catch (e) {
     state._delegateResult = "Error: " + e.message;
   }
@@ -3338,6 +3579,7 @@ async function delegateAgent() {
     state._agentRunsApi = runs.runs || [];
     state._agentActions = runs.actions || [];
   } catch (_) {}
+  state._activeJob = null;
   pollLive();
   render();
   drawGraphs();
@@ -3347,6 +3589,7 @@ async function sendChat() {
   const input = $("#chat-input");
   const text = (input?.value || "").trim();
   if (!text) return;
+  if (chatHistory.some(m => m.pending)) return;
   const specId = currentSpecialistId();
   const meta = routingMeta(state._agents || {});
   const direct = !!specId;
@@ -3358,48 +3601,14 @@ async function sendChat() {
   const btn = $("#chat-send");
   const btnLabel = direct ? `Run ${meta.label}` : "Send";
   if (btn) { btn.disabled = true; btn.textContent = "…"; }
-  startLivePoll();
-  const pollDuring = setInterval(pollLive, 800);
   try {
-    if (!direct) {
-      const res = await api("/chat", {
-        method: "POST",
-        body: JSON.stringify(chatPayload({ message: text })),
-      });
-      chatHistory.push({ role: "agent", text: res.reply || "(no response)" });
-      applyChatSessionResponse(res);
-      if (res.new_approvals?.length) {
-        state.approvals = res.pending_approvals;
-        updateBadges();
-      }
-    } else {
-      const res = await api("/agents/delegate", {
-        method: "POST",
-        body: JSON.stringify(chatPayload({ specialist: specId, task: text })),
-      });
-      const reply = typeof res.result === "string" ? res.result : JSON.stringify(res, null, 2);
-      chatHistory.push({ role: "agent", text: reply });
-      applyChatSessionResponse(res);
-      persistAgentRun({
-        id: `local-chat-${Date.now()}`,
-        agent: specId,
-        task: text,
-        result: reply,
-        duration_s: 0,
-        ts: Math.floor(Date.now() / 1000),
-        tools: [],
-        source: "chat",
-      });
-    }
-    localStorage.setItem("fos_chat", JSON.stringify(chatHistory));
+    await startAgentJob(text, { direct, specId });
   } catch (e) {
     chatHistory.push({ role: "system", text: "Error: " + e.message });
     localStorage.setItem("fos_chat", JSON.stringify(chatHistory));
+    render();
   }
-  clearInterval(pollDuring);
-  pollLive();
   if (btn) { btn.disabled = false; btn.textContent = btnLabel; }
-  render();
   animateLatestChatMessage();
 }
 
@@ -3761,6 +3970,7 @@ async function startApp() {
 
 async function boot() {
   initContentDelegation();
+  initMdEditorDialog();
   bindPinGate();
   let auth = window.__FOS_AUTH;
   if (!auth) {

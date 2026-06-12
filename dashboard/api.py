@@ -375,10 +375,84 @@ def api_artifact_file(artifact_id):
     return send_file(path, as_attachment=True, download_name=os.path.basename(path))
 
 
+@bp.route("/artifacts/<int:artifact_id>/content")
+def api_artifact_content(artifact_id):
+    from memory import agent_history
+    text = _safe(lambda: agent_history.read_artifact_text(artifact_id), None)
+    if text is None:
+        return jsonify({"error": "content not available"}), 404
+    art = agent_history.get_artifact(artifact_id) or {}
+    return jsonify({"id": artifact_id, "title": art.get("title"), "content": text, "kind": art.get("kind")})
+
+
+@bp.route("/artifacts/<int:artifact_id>/content", methods=["PUT"])
+def api_artifact_content_save(artifact_id):
+    from memory import agent_history
+    data = request.get_json(silent=True) or {}
+    content = data.get("content")
+    if content is None:
+        return jsonify({"error": "content is required"}), 400
+    ok = _safe(lambda: agent_history.write_artifact_text(artifact_id, str(content)), False)
+    if not ok:
+        return jsonify({"error": "could not save"}), 400
+    return jsonify({"ok": True, "id": artifact_id})
+
+
 @bp.route("/live")
 def api_live():
-    from dashboard import live_ops
-    return jsonify(live_ops.snapshot())
+    from dashboard import agent_jobs
+    return jsonify(agent_jobs.live_snapshot())
+
+
+@bp.route("/chat/async", methods=["POST"])
+def api_chat_async():
+    data = request.get_json(silent=True) or {}
+    message = (data.get("message") or data.get("task") or "").strip()
+    if not message:
+        return jsonify({"error": "message is required"}), 400
+    from dashboard import agent_jobs
+
+    specialist = (data.get("specialist") or "").strip()
+    mode = "delegate" if specialist else "chat"
+    job = agent_jobs.start_job(
+        mode=mode,
+        message=message,
+        world_id=(data.get("world_id") or "").strip() or None,
+        rag_mode=(data.get("rag_mode") or "auto").strip().lower() or "auto",
+        specialist=specialist or "supervisor",
+        session_id=(data.get("session_id") or "").strip() or None,
+    )
+    return jsonify({"job": job})
+
+
+@bp.route("/chat/jobs")
+def api_chat_jobs():
+    from dashboard import agent_jobs
+    active = request.args.get("active", "").lower() in ("1", "true", "yes")
+    return jsonify({"jobs": agent_jobs.list_jobs(active_only=active)})
+
+
+@bp.route("/chat/jobs/<job_id>")
+def api_chat_job(job_id):
+    from dashboard import agent_jobs
+    from agent import store
+
+    job = agent_jobs.get_job(job_id)
+    if not job:
+        return jsonify({"error": "job not found"}), 404
+    out = {"job": job}
+    if job.get("status") in ("completed", "cancelled", "failed"):
+        out["pending_approvals"] = store.list_pending_approvals()
+    return jsonify(out)
+
+
+@bp.route("/chat/jobs/<job_id>/cancel", methods=["POST"])
+def api_chat_job_cancel(job_id):
+    from dashboard import agent_jobs
+    ok = agent_jobs.cancel_job(job_id)
+    if not ok:
+        return jsonify({"error": "job not running or not found"}), 404
+    return jsonify({"ok": True, "job": agent_jobs.get_job(job_id)})
 
 
 @bp.route("/agents")

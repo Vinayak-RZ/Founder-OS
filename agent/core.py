@@ -83,10 +83,13 @@ async def _rag_context(message: str, mode: str, world_id: str | None) -> str:
 
 
 async def run(user_message: str, image_context: str = "", actor: str = "user",
-              on_status=None, world_id: str | None = None, rag_mode: str = "auto") -> str:
+              on_status=None, world_id: str | None = None, rag_mode: str = "auto",
+              should_cancel=None) -> str:
     """Process one user turn through plan -> execute -> verify and return the reply."""
     if config.agent_paused:
         return "⏸ I'm paused right now (AGENT_PAUSED is on). Turn it off to let me act again."
+    if should_cancel and should_cancel():
+        return "⏹ Stopped by user."
 
     trace.start(actor, user_message)
     enriched = user_message
@@ -143,7 +146,12 @@ async def run(user_message: str, image_context: str = "", actor: str = "user",
     tools_used = []
 
     # ── EXECUTE ────────────────────────────────────────────────────────────────
-    final_text = await execute_loop(messages, schemas, actor, on_status, tools_used)
+    final_text = await execute_loop(messages, schemas, actor, on_status, tools_used,
+                                    should_cancel=should_cancel)
+
+    if should_cancel and should_cancel():
+        trace.finish("⏹ Stopped by user.")
+        return "⏹ Stopped by user."
 
     # ── VERIFY + one refinement (only for deliberate turns) ────────────────────
     if deliberate and final_text and not final_text.startswith("⚠️"):

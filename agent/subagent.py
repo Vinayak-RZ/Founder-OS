@@ -78,7 +78,7 @@ def specialist_meta(name: str) -> dict:
 
 
 async def run_subagent(name: str, task: str, actor: str = "subagent", on_status=None,
-                       world_id: str | None = None) -> dict:
+                       world_id: str | None = None, should_cancel=None) -> dict:
     spec = SPECIALISTS.get(name)
     if not spec:
         return {"error": f"Unknown specialist '{name}'. Options: {list_specialists()}"}
@@ -104,7 +104,8 @@ async def run_subagent(name: str, task: str, actor: str = "subagent", on_status=
                 {"role": "user", "content": task}]
     tools_used = []
     result = await execute_loop(messages, schemas, actor=f"subagent:{name}",
-                                on_status=on_status, tools_used=tools_used, max_steps=6)
+                                on_status=on_status, tools_used=tools_used, max_steps=6,
+                                should_cancel=should_cancel)
     return {"specialist": name, "result": result, "tools_used": tools_used}
 
 
