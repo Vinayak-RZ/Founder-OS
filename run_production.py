@@ -23,11 +23,15 @@ def main() -> None:
     threads = os.getenv("GUNICORN_THREADS", "4")
     timeout = os.getenv("GUNICORN_TIMEOUT", "120")
 
-    # Gunicorn replaces the current process
-    os.execvp(
-        "gunicorn",
+    gunicorn = os.path.join(os.path.dirname(sys.executable), "gunicorn")
+    if not os.path.isfile(gunicorn):
+        raise FileNotFoundError("gunicorn")
+
+    # Gunicorn replaces the current process (use venv binary, not PATH)
+    os.execv(
+        gunicorn,
         [
-            "gunicorn",
+            gunicorn,
             "dashboard.app:app",
             f"--bind={host}:{port}",
             f"--workers={workers}",
