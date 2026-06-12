@@ -1230,6 +1230,64 @@ function vaultStorageLabel() {
   return b === "s3" ? "S3" : "local object storage";
 }
 
+function renderGithubReposPanel(w, vault) {
+  const status = state._githubStatus || {};
+  const connected = !!status.connected;
+  const oauthOk = !!status.oauth_configured;
+  const linked = vault.github_repos || [];
+  const ghRepos = state._githubRepos || [];
+  const pickOpts = ghRepos.map(r =>
+    `<option value="${esc(r.full_name)}">${esc(r.full_name)}${r.private ? " (private)" : ""}</option>`
+  ).join("");
+  const linkedRows = linked.map(r => `
+    <div class="github-repo-row">
+      <div>
+        <strong class="mono">${esc(r.full_name)}</strong>
+        <span class="world-meta">${r.file_count || 0} files synced${r.synced_at ? ` · ${esc(r.synced_at)}` : ""}</span>
+        ${r.last_error ? `<span class="world-meta" style="color:var(--color-warn)">${esc(r.last_error)}</span>` : ""}
+      </div>
+      <div class="github-repo-row__actions">
+        <button type="button" class="button-outline-on-dark button-sm" data-github-sync="${r.id}" data-world-id="${esc(w.id)}">Sync to ${esc(vaultStorageLabel())}</button>
+        <button type="button" class="button-tertiary-text button-sm" data-github-unlink="${r.id}" data-world-id="${esc(w.id)}">Unlink</button>
+      </div>
+    </div>`).join("");
+
+  if (!oauthOk) {
+    return `<section class="github-repos-panel">
+      <p class="section-eyebrow">GitHub</p>
+      <p class="body-md muted">Add <code>GITHUB_CLIENT_ID</code> and <code>GITHUB_CLIENT_SECRET</code> to <code>.env</code>, register callback <code>${esc(status.redirect_uri || "/api/github/callback")}</code>, then restart.</p>
+    </section>`;
+  }
+
+  if (!connected) {
+    return `<section class="github-repos-panel">
+      <p class="section-eyebrow">GitHub repositories</p>
+      <p class="body-md muted">Authorize GitHub to browse your repos and sync docs into this world's knowledge graph (${esc(vaultStorageLabel())}).</p>
+      <a class="button-primary button-sm" href="/api/github/auth/start?world_id=${encodeURIComponent(w.id)}">Connect GitHub</a>
+    </section>`;
+  }
+
+  return `<section class="github-repos-panel">
+    <div class="github-repos-panel__head">
+      <div>
+        <p class="section-eyebrow">GitHub repositories</p>
+        <p class="body-md muted">Connected as <strong>${esc(status.user?.login || "GitHub")}</strong> — link multiple repos; files sync to ${esc(vaultStorageLabel())} with searchable descriptions.</p>
+      </div>
+    </div>
+    <div class="human-form__row" style="align-items:flex-end">
+      <label class="human-field" style="flex:1">
+        <span class="caption-uppercase">Add repository</span>
+        <select class="text-input-on-dark" id="github-repo-pick">
+          <option value="">Select a repository…</option>
+          ${pickOpts}
+        </select>
+      </label>
+      <button type="button" class="button-primary button-sm" data-github-add="${esc(w.id)}">Link &amp; sync</button>
+    </div>
+    <div class="github-repo-list">${linkedRows || "<p class='body-md muted'>No GitHub repos linked yet.</p>"}</div>
+  </section>`;
+}
+
 function renderWorldVaultPanel(w) {
   if (!w || w.id === "root") return "";
   const vault = state._worldVault?.vault || state._worldVault || {};
@@ -1249,7 +1307,7 @@ function renderWorldVaultPanel(w) {
     <article class="vault-doc-card" data-doc-id="${d.id}">
       <div class="vault-doc-card__head">
         <h4>${esc(d.title)}</h4>
-        <span class="world-meta">${esc(d.filename || "")} · ${formatBytes(d.size_bytes)}</span>
+        <span class="world-meta">${esc(d.filename || "")} · ${formatBytes(d.size_bytes)}${d.source_type === "github" ? " · GitHub" : ""}</span>
       </div>
       <p class="body-md">${esc(d.description || "No description")}</p>
       <div class="vault-doc-card__actions">
@@ -1279,6 +1337,7 @@ function renderWorldVaultPanel(w) {
           <button type="button" class="button-outline-on-dark button-sm" data-vault-ingest="${esc(w.id)}">Re-ingest</button>
         </div>
       </div>
+      ${renderGithubReposPanel(w, vault)}
       <div class="vault-facet-tabs" role="tablist">${facetTabs || "<span class='muted'>No categories</span>"}</div>
       ${showForm ? renderVaultDocForm(w, facets, activeFacet) : ""}
       <div class="vault-doc-grid">${docRows || "<p class='body-md muted'>No documents in this slot yet — add your ICP, GTM notes, research, etc.</p>"}</div>
@@ -1757,7 +1816,7 @@ function renderSettings() {
         ${integrationCard("X / Twitter", integ.x, "Posting and monitoring API keys")}
         ${integrationCard("Serper", integ.serper, "Web search")}
         ${integrationCard("Tavily", integ.tavily, "Research search")}
-        ${integrationCard("GitHub", false, "Link repos in Worlds → Vault (OAuth coming)")}
+        ${integrationCard("GitHub", integ.github, integ.github_oauth ? "OAuth — link repos in Worlds" : "Set GITHUB_CLIENT_ID in .env")}
       </div>
     </section>
   </div>`;
@@ -1801,6 +1860,12 @@ async function loadViewData(view) {
       state._worldTemplates = (await api("/world-templates").catch(() => ({}))).templates || [];
     }
     if (!state.inspectorWorldId) state.inspectorWorldId = currentWorldId();
+    state._githubStatus = await api("/github/status").catch(() => ({}));
+    if (state._githubStatus?.connected) {
+      state._githubRepos = (await api("/github/repos").catch(() => ({}))).repos || [];
+    } else {
+      state._githubRepos = [];
+    }
     await loadWorldVault(inspectorWorldId());
   }
   if (view === "memory") state._memoryFull = await api("/graph/memory");
@@ -2062,6 +2127,9 @@ function bindViewEvents() {
   $$("[data-vault-delete-doc]").forEach(b => b.addEventListener("click", () => {
     deleteVaultDoc(inspectorWorldId(), b.dataset.vaultDeleteDoc);
   }));
+  $$("[data-github-add]").forEach(b => b.addEventListener("click", () => connectGithubRepo(b.dataset.githubAdd)));
+  $$("[data-github-sync]").forEach(b => b.addEventListener("click", () => syncGithubRepo(b.dataset.worldId, b.dataset.githubSync)));
+  $$("[data-github-unlink]").forEach(b => b.addEventListener("click", () => unlinkGithubRepo(b.dataset.worldId, b.dataset.githubUnlink)));
 }
 
 async function createWorldFromForm(form) {
@@ -2280,6 +2348,38 @@ async function startVaultDocEdit(worldId, docId) {
     render();
     const ta = $("#vault-doc-content");
     if (ta) ta.value = res.content || "";
+  } catch (e) { alert(e.message); }
+}
+
+async function connectGithubRepo(worldId) {
+  const full_name = $("#github-repo-pick")?.value?.trim();
+  if (!full_name) return alert("Select a repository");
+  try {
+    const res = await api(`/worlds/${encodeURIComponent(worldId)}/repos`, {
+      method: "POST",
+      body: JSON.stringify({ full_name }),
+    });
+    alert(`Linked ${full_name}: ${res.sync?.imported || 0} files synced to ${vaultStorageLabel()}`);
+    await loadWorldVault(worldId);
+    render();
+  } catch (e) { alert(e.message); }
+}
+
+async function syncGithubRepo(worldId, linkId) {
+  try {
+    const res = await api(`/worlds/${encodeURIComponent(worldId)}/repos/${encodeURIComponent(linkId)}/sync`, { method: "POST", body: "{}" });
+    alert(`Synced ${res.imported || 0} files${res.errors?.length ? ` (${res.errors.length} errors)` : ""}`);
+    await loadWorldVault(worldId);
+    render();
+  } catch (e) { alert(e.message); }
+}
+
+async function unlinkGithubRepo(worldId, linkId) {
+  if (!confirm("Unlink this repo and remove its synced documents from this world?")) return;
+  try {
+    await api(`/worlds/${encodeURIComponent(worldId)}/repos/${encodeURIComponent(linkId)}`, { method: "DELETE" });
+    await loadWorldVault(worldId);
+    render();
   } catch (e) { alert(e.message); }
 }
 
@@ -2684,6 +2784,22 @@ async function loadBootExtras() {
   render();
 }
 
+function applyBootUrlParams() {
+  const p = new URLSearchParams(location.search);
+  const view = p.get("view");
+  const world = p.get("world");
+  if (view) currentView = view;
+  if (world) {
+    state.inspectorWorldId = world;
+    setActiveWorld(world);
+  }
+  if (p.get("github") === "connected" || p.get("github_error")) {
+    const err = p.get("github_error");
+    if (err) console.warn("GitHub auth:", err);
+    history.replaceState({}, "", location.pathname);
+  }
+}
+
 async function boot() {
   try {
     await refresh();
@@ -2691,8 +2807,12 @@ async function boot() {
     showBootError(e);
     return;
   }
+  applyBootUrlParams();
   syncMobileNav(currentView);
   render();
+  if (currentView === "world") {
+    loadViewData("world").then(() => { render(); afterRender(); }).catch(console.error);
+  }
   startLivePoll();
   try {
     await loadBootExtras();

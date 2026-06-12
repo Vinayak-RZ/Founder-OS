@@ -54,6 +54,11 @@ class Config:
     qdrant_url: str
     qdrant_api_key: str
     qdrant_collection_prefix: str
+    # GitHub (optional — world repo linking)
+    github_client_id: str
+    github_client_secret: str
+    github_token_path: str
+    github_redirect_uri: str
 
 def _truthy(val: str, default: bool = False) -> bool:
     if val is None or val == "":
@@ -136,6 +141,13 @@ def load_config() -> Config:
         qdrant_url=os.getenv("QDRANT_URL", "").strip().rstrip("/"),
         qdrant_api_key=os.getenv("QDRANT_API_KEY", "").strip(),
         qdrant_collection_prefix=os.getenv("QDRANT_COLLECTION_PREFIX", "").strip(),
+        github_client_id=os.getenv("GITHUB_CLIENT_ID", "").strip(),
+        github_client_secret=os.getenv("GITHUB_CLIENT_SECRET", "").strip(),
+        github_token_path=os.getenv("GITHUB_TOKEN_PATH", "./data/github_token.json"),
+        github_redirect_uri=os.getenv(
+            "GITHUB_REDIRECT_URI",
+            f"http://127.0.0.1:{int(os.getenv('DASHBOARD_PORT', '8787') or '8787')}/api/github/callback",
+        ).strip(),
     )
 
 config = load_config()

@@ -303,6 +303,14 @@ def vault_structure(world_id: str, world_slug: str, template_id: str, world: dic
     elif repo_txt.exists():
         repo_path = repo_txt.read_text(encoding="utf-8").strip()
 
+    github_repos = []
+    try:
+        from memory import world_repos as wr
+
+        github_repos = wr.list_repos(world_id)
+    except Exception:
+        pass
+
     return {
         "world_id": world_id,
         "vault_path": str(base),
@@ -312,6 +320,7 @@ def vault_structure(world_id: str, world_slug: str, template_id: str, world: dic
         "domain_counts": domains_stats,
         "document_count": len(registry_docs),
         "storage_backend": _storage_backend_label(),
+        "github_repos": github_repos,
     }
 
 

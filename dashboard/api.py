@@ -70,6 +70,8 @@ def _public_config():
             "x": bool(config.x_bearer_token or config.x_api_key),
             "serper": bool(config.serper_api_key),
             "tavily": bool(config.tavily_api_key),
+            "github": _safe(lambda: __import__("integrations.github_client", fromlist=["is_connected"]).is_connected(), False),
+            "github_oauth": bool(config.github_client_id and config.github_client_secret),
         },
     }
 
@@ -765,3 +767,178 @@ def api_vault_search():
         return jsonify({"error": "q is required"}), 400
     hits = _safe(lambda: knowledge_vault.search_vault(q, world_id=world_id, domain=domain), [])
     return jsonify({"query": q, "hits": hits})
+
+
+# ── GitHub OAuth + multi-repo linking ─────────────────────────────────────────
+
+
+@bp.route("/github/status")
+def api_github_status():
+    from integrations import github_client
+    from config import config
+    user = None
+    if github_client.is_connected():
+        user = _safe(github_client.current_user, None)
+    return jsonify({
+        "connected": github_client.is_connected(),
+        "oauth_configured": github_client.oauth_configured(),
+        "user": {"login": user.get("login"), "name": user.get("name")} if user else None,
+        "redirect_uri": config.github_redirect_uri,
+    })
+
+
+@bp.route("/github/auth/start")
+def api_github_auth_start():
+    from flask import redirect
+    from integrations import github_client
+    world_id = (request.args.get("world_id") or "").strip()
+    state = json.dumps({"world_id": world_id}) if world_id else ""
+    try:
+        url = github_client.build_auth_url(state=state)
+    except RuntimeError as e:
+        return jsonify({"error": str(e)}), 400
+    return redirect(url)
+
+
+@bp.route("/github/callback")
+def api_github_callback():
+    from flask import redirect
+    from integrations import github_client
+    from config import config
+    err = request.args.get("error")
+    if err:
+        return redirect(f"/?github_error={err}")
+    code = (request.args.get("code") or "").strip()
+    if not code:
+        return redirect("/?github_error=missing_code")
+    try:
+        token = github_client.exchange_code(code)
+        github_client.save_token(token)
+    except Exception as e:
+        return redirect(f"/?github_error={e}")
+    raw_state = request.args.get("state") or ""
+    world_id = ""
+    if raw_state:
+        try:
+            world_id = json.loads(raw_state).get("world_id") or ""
+        except json.JSONDecodeError:
+            pass
+    port = config.dashboard_port
+    if world_id:
+        return redirect(f"/?view=world&world={world_id}&github=connected")
+    return redirect("/?github=connected")
+
+
+@bp.route("/github/repos")
+def api_github_repos():
+    from integrations import github_client
+    if not github_client.is_connected():
+        return jsonify({"error": "GitHub not connected"}), 401
+    q = (request.args.get("q") or "").strip().lower()
+    repos = _safe(github_client.list_all_repos, [])
+    items = [
+        {
+            "full_name": r.get("full_name"),
+            "private": r.get("private"),
+            "default_branch": r.get("default_branch") or "main",
+            "html_url": r.get("html_url"),
+            "description": (r.get("description") or "")[:200],
+            "updated_at": r.get("updated_at"),
+        }
+        for r in repos
+        if r.get("full_name")
+    ]
+    if q:
+        items = [r for r in items if q in r["full_name"].lower() or q in (r.get("description") or "").lower()]
+    return jsonify({"repos": items[:200]})
+
+
+@bp.route("/worlds/<world_id>/repos")
+def api_world_repos_list(world_id):
+    from memory import worlds as hierarchical_worlds
+    from memory import world_repos
+    w = hierarchical_worlds.get(world_id)
+    if not w:
+        return jsonify({"error": "world not found"}), 404
+    return jsonify({"repos": _safe(lambda: world_repos.list_repos(world_id), [])})
+
+
+@bp.route("/worlds/<world_id>/repos", methods=["POST"])
+def api_world_repos_connect(world_id):
+    from integrations import github_client, github_sync
+    from memory import worlds as hierarchical_worlds
+    from memory import world_repos
+    from memory.world_templates import template_for_kind
+    if not github_client.is_connected():
+        return jsonify({"error": "Connect GitHub first"}), 401
+    data = request.get_json(silent=True) or {}
+    full_name = (data.get("full_name") or "").strip()
+    if not full_name:
+        return jsonify({"error": "full_name (owner/repo) is required"}), 400
+    w = hierarchical_worlds.get(world_id)
+    if not w:
+        return jsonify({"error": "world not found"}), 404
+    try:
+        meta = github_client.get_repo(full_name)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
+    try:
+        link = world_repos.add_repo(
+            world_id,
+            full_name,
+            default_branch=meta.get("default_branch") or "main",
+            private=bool(meta.get("private")),
+            html_url=meta.get("html_url") or "",
+        )
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    tpl = w.get("template") or template_for_kind(w.get("kind", "project"))
+    slug = w.get("slug") or world_id
+    sync = _safe(
+        lambda: github_sync.sync_repo_to_world(
+            world_id, slug, tpl, full_name, link.get("default_branch"), link_id=link["id"]
+        ),
+        {"error": "sync failed"},
+    )
+    return jsonify({"repo": link, "sync": sync})
+
+
+@bp.route("/worlds/<world_id>/repos/<int:link_id>", methods=["DELETE"])
+def api_world_repos_disconnect(world_id, link_id):
+    from memory import worlds as hierarchical_worlds
+    from memory import world_repos
+    from memory import vault_documents
+    w = hierarchical_worlds.get(world_id)
+    if not w:
+        return jsonify({"error": "world not found"}), 404
+    link = world_repos.get_repo_link(link_id)
+    if not link or link.get("world_id") != world_id:
+        return jsonify({"error": "repo link not found"}), 404
+    removed_docs = _safe(lambda: vault_documents.delete_documents_for_github_repo(world_id, link["full_name"]), 0)
+    ok = world_repos.remove_repo(link_id, world_id)
+    if not ok:
+        return jsonify({"error": "repo link not found"}), 404
+    return jsonify({"ok": True, "removed_documents": removed_docs})
+
+
+@bp.route("/worlds/<world_id>/repos/<int:link_id>/sync", methods=["POST"])
+def api_world_repos_sync(world_id, link_id):
+    from integrations import github_sync
+    from memory import worlds as hierarchical_worlds
+    from memory import world_repos
+    from memory.world_templates import template_for_kind
+    w = hierarchical_worlds.get(world_id)
+    if not w:
+        return jsonify({"error": "world not found"}), 404
+    link = world_repos.get_repo_link(link_id)
+    if not link or link.get("world_id") != world_id:
+        return jsonify({"error": "repo link not found"}), 404
+    tpl = w.get("template") or template_for_kind(w.get("kind", "project"))
+    slug = w.get("slug") or world_id
+    result = _safe(
+        lambda: github_sync.sync_repo_to_world(
+            world_id, slug, tpl, link["full_name"], link.get("default_branch"), link_id=link_id
+        ),
+        {"error": "sync failed"},
+    )
+    return jsonify(result)

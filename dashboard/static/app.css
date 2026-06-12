@@ -2706,6 +2706,41 @@ td {
   margin-top: var(--space-xs);
 }
 
+.github-repos-panel {
+  margin: var(--space-md) 0;
+  padding: var(--space-sm);
+  border: 1px solid var(--color-hairline);
+  border-radius: var(--radius-md);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.github-repo-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+  margin-top: var(--space-sm);
+}
+
+.github-repo-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-xs);
+  padding: var(--space-xs) 0;
+  border-bottom: 1px solid var(--color-hairline);
+}
+
+.github-repo-row:last-child {
+  border-bottom: none;
+}
+
+.github-repo-row__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-xxs);
+}
+
 .vault-doc-form {
   border: 1px solid var(--color-hairline);
   border-radius: var(--radius-md);

@@ -41,6 +41,16 @@ def init_vault_documents_db():
         CREATE INDEX IF NOT EXISTS idx_vault_docs_facet ON vault_documents(world_id, facet_id);
         """
     )
+    for col, typedef in (
+        ("source_type", "TEXT DEFAULT 'upload'"),
+        ("source_ref", "TEXT DEFAULT ''"),
+        ("github_repo", "TEXT DEFAULT ''"),
+        ("github_path", "TEXT DEFAULT ''"),
+    ):
+        try:
+            conn.execute(f"ALTER TABLE vault_documents ADD COLUMN {col} {typedef}")
+        except Exception:
+            pass
     conn.commit()
     conn.close()
 
@@ -282,6 +292,86 @@ def delete_document(doc_id: int) -> bool:
     conn.commit()
     conn.close()
     return True
+
+
+def get_by_source_ref(world_id: str, source_ref: str) -> Optional[dict]:
+    init_vault_documents_db()
+    conn = get_conn()
+    row = conn.execute(
+        "SELECT * FROM vault_documents WHERE world_id = ? AND source_ref = ?",
+        (world_id, source_ref),
+    ).fetchone()
+    conn.close()
+    return _row(row) if row else None
+
+
+def delete_documents_for_github_repo(world_id: str, full_name: str) -> int:
+    init_vault_documents_db()
+    prefix = f"github:{full_name}:"
+    conn = get_conn()
+    rows = conn.execute(
+        "SELECT id FROM vault_documents WHERE world_id = ? AND source_ref LIKE ?",
+        (world_id, prefix + "%"),
+    ).fetchall()
+    conn.close()
+    n = 0
+    for r in rows:
+        if delete_document(r["id"]):
+            n += 1
+    return n
+
+
+def upsert_github_document(
+    *,
+    world_id: str,
+    world_slug: str,
+    template_id: str,
+    facet_id: str,
+    title: str,
+    description: str,
+    filename: str,
+    file_bytes: bytes,
+    source_ref: str,
+    github_repo: str,
+    github_path: str,
+) -> dict:
+    existing = get_by_source_ref(world_id, source_ref)
+    if existing:
+        stored = object_storage.put_bytes(
+            existing["storage_key"],
+            file_bytes,
+            existing.get("mime_type") or mimetypes.guess_type(filename)[0] or "application/octet-stream",
+        )
+        if stored.get("error"):
+            raise RuntimeError(stored["error"])
+        return update_document(
+            existing["id"],
+            title=title,
+            description=description,
+            facet_id=facet_id,
+            template_id=template_id,
+        ) or existing
+
+    doc = create_document(
+        world_id,
+        world_slug,
+        template_id,
+        facet_id,
+        title,
+        description,
+        file_bytes=file_bytes,
+        filename=filename,
+    )
+    init_vault_documents_db()
+    conn = get_conn()
+    conn.execute(
+        """UPDATE vault_documents SET source_type = 'github', source_ref = ?,
+           github_repo = ?, github_path = ?, relative_path = ? WHERE id = ?""",
+        (source_ref, github_repo, github_path, f"github/{github_repo}/{github_path}", doc["id"]),
+    )
+    conn.commit()
+    conn.close()
+    return get_document(doc["id"]) or doc
 
 
 def effective_facets(world: dict, template_id: str) -> list:
