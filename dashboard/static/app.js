@@ -1760,15 +1760,20 @@ function renderActivity() {
   </div>`;
 }
 
-function infraHealthCard(title, ok, lines, detail) {
+function infraKvRow(label, value, mono = false) {
+  const val = value == null || value === "" ? "—" : String(value);
+  return `<div class="infra-kv"><dt>${esc(label)}</dt><dd${mono ? ' class="infra-kv__val"' : ""}>${esc(val)}</dd></div>`;
+}
+
+function infraHealthCard(title, ok, rows, detail) {
   const status = ok ? "Healthy" : "Issue";
   return `<div class="integration-card infra-health-card${ok ? " is-connected" : " is-warning"}">
     <div class="integration-card__head">
       <span class="title-sm">${esc(title)}</span>
       <span class="integration-card__status">${status}</span>
     </div>
-    <dl class="infra-health-dl">${lines}</dl>
-    ${detail ? `<p class="world-meta">${esc(detail)}</p>` : ""}
+    <dl class="infra-kv-list">${rows}</dl>
+    ${detail ? `<p class="integration-card__detail">${esc(detail)}</p>` : ""}
   </div>`;
 }
 
@@ -1787,20 +1792,20 @@ function renderInfrastructureHealth() {
   const s3 = h.s3 || {};
   const disk = h.disk || {};
   const app = h.app || {};
-  const hostLines = host.platform === "ec2"
-    ? `<div class="spec-cell"><dt>Instance</dt><dd class="small mono">${esc(host.instance_id || "—")}</dd></div>
-       <div class="spec-cell"><dt>Region</dt><dd class="small">${esc(host.region || "—")}</dd></div>
-       <div class="spec-cell"><dt>Type</dt><dd class="small">${esc(host.instance_type || "—")}</dd></div>
-       <div class="spec-cell"><dt>IAM role</dt><dd class="small">${esc(host.iam_role || "—")}</dd></div>`
-    : `<div class="spec-cell"><dt>Host</dt><dd class="small">Local / dev</dd></div>`;
-  const s3Lines = s3.configured
-    ? `<div class="spec-cell"><dt>Bucket</dt><dd class="small mono">${esc(s3.bucket || "—")}</dd></div>
-       <div class="spec-cell"><dt>Region</dt><dd class="small">${esc(s3.region || "—")}</dd></div>
-       <div class="spec-cell"><dt>Read/write</dt><dd class="small">${s3.read_write_ok ? "OK" : (s3.reachable ? "Reachable only" : "—")}</dd></div>`
-    : `<div class="spec-cell"><dt>Vault</dt><dd class="small">Local disk only</dd></div>`;
-  const diskLines = `<div class="spec-cell"><dt>Data path</dt><dd class="small mono">${esc(disk.path || "—")}</dd></div>
-    <div class="spec-cell"><dt>Free</dt><dd class="small">${disk.free_gb != null ? `${disk.free_gb} GB` : "—"}</dd></div>
-    <div class="spec-cell"><dt>Used</dt><dd class="small">${disk.used_pct != null ? `${disk.used_pct}%` : "—"}</dd></div>`;
+  const hostRows = host.platform === "ec2"
+    ? infraKvRow("Instance", host.instance_id, true)
+      + infraKvRow("Region", host.region)
+      + infraKvRow("Type", host.instance_type)
+      + infraKvRow("IAM role", host.iam_role)
+    : infraKvRow("Host", "Local / dev");
+  const s3Rows = s3.configured
+    ? infraKvRow("Bucket", s3.bucket, true)
+      + infraKvRow("Region", s3.region)
+      + infraKvRow("Read/write", s3.read_write_ok ? "OK" : (s3.reachable ? "Reachable only" : "Failed"))
+    : infraKvRow("Storage", "Local disk only");
+  const diskRows = infraKvRow("Data path", disk.path, true)
+    + infraKvRow("Free", disk.free_gb != null ? `${disk.free_gb} GB` : null)
+    + infraKvRow("Used", disk.used_pct != null ? `${disk.used_pct}%` : null);
   const overallOk = !!h.ok;
   return `<section class="driver-card span-12">
     <div class="infra-health-head">
@@ -1813,10 +1818,10 @@ function renderInfrastructureHealth() {
         <button type="button" class="button-outline-on-dark button-sm" id="btn-infra-refresh">Refresh</button>
       </div>
     </div>
-    <div class="integration-grid" style="margin-top:var(--space-sm)">
-      ${infraHealthCard("EC2 host", host.ok !== false, hostLines, host.detail)}
-      ${infraHealthCard("S3 vault", s3.configured ? !!s3.ok : true, s3Lines, s3.detail)}
-      ${infraHealthCard("Disk", !!disk.ok, diskLines, disk.detail)}
+    <div class="infra-health-grid">
+      ${infraHealthCard("EC2 host", host.ok !== false, hostRows, host.detail)}
+      ${infraHealthCard("S3 vault", s3.configured ? !!s3.ok : true, s3Rows, s3.detail)}
+      ${infraHealthCard("Disk", !!disk.ok, diskRows, disk.detail)}
     </div>
   </section>`;
 }
@@ -1825,10 +1830,9 @@ function integrationCard(name, connected, detail) {
   return `<div class="integration-card${connected ? " is-connected" : ""}">
     <div class="integration-card__head">
       <span class="title-sm">${esc(name)}</span>
-      <span class="integration-card__status">${connected ? "Connected" : "Not connected"}</span>
+      <span class="integration-card__status">${connected ? "Active" : "Not configured"}</span>
     </div>
-    <p class="world-meta">${esc(detail)}</p>
-    <button type="button" class="button-outline-on-dark button-sm" disabled>${connected ? "Manage" : "Connect"}</button>
+    <p class="integration-card__detail">${esc(detail)}</p>
   </div>`;
 }
 
@@ -1839,13 +1843,13 @@ function renderSettings() {
   const pauseBtn = c.agent_paused
     ? `<button type="button" class="button-primary" id="toggle-pause">Resume agent</button>`
     : `<button type="button" class="button-outline-on-dark" id="toggle-pause">Pause agent</button>`;
-  return `<div class="dashboard-grid">
+  return `<div class="dashboard-grid settings-page">
     ${renderInfrastructureHealth()}
-    <section class="driver-card span-4">
+    <section class="driver-card span-4 settings-panel">
       <p class="caption-uppercase">Identity</p>
-      <dl class="stat-grid" style="margin-top:var(--space-sm)">
-        <div class="spec-cell"><dt>Name</dt><dd class="small">${esc(c.my_name)}</dd></div>
-        <div class="spec-cell"><dt>Company</dt><dd class="small">${esc(c.company_name)}</dd></div>
+      <dl class="settings-kv" style="margin-top:var(--space-sm)">
+        <div class="settings-kv__row"><dt>Name</dt><dd>${esc(c.my_name)}</dd></div>
+        <div class="settings-kv__row"><dt>Company</dt><dd>${esc(c.company_name)}</dd></div>
       </dl>
       <p class="body-md muted" style="margin-top:var(--space-sm)">Edit identity in <code>.env</code> — restart to persist.</p>
     </section>
@@ -1872,12 +1876,12 @@ function renderSettings() {
         </div>
       </form>
     </section>
-    <section class="driver-card span-4">
+    <section class="driver-card span-4 settings-panel">
       <p class="caption-uppercase">Channels</p>
-      <dl class="stat-grid" style="margin-top:var(--space-sm)">
-        <div class="spec-cell"><dt>Web UI</dt><dd class="small">${c.web_ui_enabled ? "On" : "Off"}</dd></div>
-        <div class="spec-cell"><dt>Telegram</dt><dd class="small">${c.telegram_enabled ? "On" : "Off"}</dd></div>
-        <div class="spec-cell"><dt>Port</dt><dd class="small">${c.dashboard_port}</dd></div>
+      <dl class="settings-kv" style="margin-top:var(--space-sm)">
+        <div class="settings-kv__row"><dt>Web UI</dt><dd>${c.web_ui_enabled ? "On" : "Off"}</dd></div>
+        <div class="settings-kv__row"><dt>Telegram</dt><dd>${c.telegram_enabled ? "On" : "Off"}</dd></div>
+        <div class="settings-kv__row"><dt>Port</dt><dd>${c.dashboard_port}</dd></div>
       </dl>
     </section>
     <section class="driver-card span-4">
@@ -1896,7 +1900,7 @@ function renderSettings() {
         ${integrationCard("X / Twitter", integ.x, "Posting and monitoring API keys")}
         ${integrationCard("Serper", integ.serper, "Web search")}
         ${integrationCard("Tavily", integ.tavily, "Research search")}
-        ${integrationCard("GitHub", integ.github, integ.github_oauth ? "OAuth — link repos in Worlds" : "Set GITHUB_CLIENT_ID in .env")}
+        ${integrationCard("GitHub", integ.github || integ.github_oauth, integ.github ? "Connected — link repos in Worlds" : (integ.github_oauth ? "OAuth ready — connect in Worlds" : "Set GITHUB_CLIENT_ID in .env"))}
       </div>
     </section>
   </div>`;

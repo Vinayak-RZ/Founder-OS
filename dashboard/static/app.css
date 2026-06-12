@@ -2035,18 +2035,26 @@ td {
 
 .integration-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 240px), 1fr));
   gap: var(--space-sm);
 }
 
 .integration-card {
-  padding: var(--space-sm);
+  padding: var(--space-sm) var(--space-md);
   border: 1px solid var(--color-outline-variant);
   border-radius: var(--rounded-lg);
   background: var(--color-surface-low);
   display: flex;
   flex-direction: column;
-  gap: var(--space-xxs);
+  gap: var(--space-xs);
+  min-width: 0;
+}
+
+.integration-card__detail {
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--color-muted);
+  margin: 0;
 }
 
 .integration-card.is-connected {
@@ -2085,13 +2093,95 @@ td {
   display: flex;
   align-items: center;
   gap: var(--space-xs);
+  flex-shrink: 0;
 }
 
-.infra-health-dl {
+.infra-health-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: var(--space-xxs) var(--space-sm);
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-sm);
+  margin-top: var(--space-sm);
+}
+
+.infra-kv-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
   margin: 0;
+  min-width: 0;
+}
+
+.infra-kv {
+  display: grid;
+  grid-template-columns: 76px minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+}
+
+.infra-kv dt {
+  margin: 0;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-muted);
+  line-height: 1.4;
+  padding-top: 2px;
+}
+
+.infra-kv dd {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.4;
+  color: var(--color-on-surface);
+  overflow-wrap: anywhere;
+  word-break: normal;
+}
+
+.infra-kv__val {
+  font-family: var(--font-mono, "JetBrains Mono", monospace);
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+}
+
+.infra-health-card {
+  min-height: 100%;
+}
+
+.settings-kv {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+  margin: 0;
+}
+
+.settings-kv__row {
+  display: grid;
+  grid-template-columns: 88px minmax(0, 1fr);
+  gap: var(--space-xs);
+  align-items: baseline;
+}
+
+.settings-kv__row dt {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-muted);
+}
+
+.settings-kv__row dd {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-on-surface);
+  overflow-wrap: anywhere;
+}
+
+.settings-page .driver-card {
+  min-width: 0;
 }
 
 .integration-card.is-warning {
@@ -2111,12 +2201,6 @@ td {
 .badge-pill--warn {
   background: color-mix(in srgb, var(--color-semantic-warning, #c9a227) 12%, transparent);
   color: var(--color-semantic-warning, #9a7b0a);
-}
-
-.small.mono {
-  font-family: var(--font-mono, "JetBrains Mono", monospace);
-  font-size: 11px;
-  word-break: break-all;
 }
 
 /* ── Agent fleet (aggregator) ───────────────────────────────────────────── */
@@ -2874,6 +2958,7 @@ td {
   border: 1px solid var(--color-hairline);
   border-radius: var(--radius-md);
   background: rgba(255, 255, 255, 0.02);
+  min-width: 0;
 }
 
 .vault-doc-card__head {
@@ -2917,6 +3002,17 @@ td {
   gap: var(--space-xs);
   padding: var(--space-xs) 0;
   border-bottom: 1px solid var(--color-hairline);
+  min-width: 0;
+}
+
+.github-repo-row > div:first-child {
+  min-width: 0;
+  flex: 1 1 180px;
+}
+
+.github-repo-row .title-sm,
+.github-repo-row .world-meta {
+  overflow-wrap: anywhere;
 }
 
 .github-repo-row:last-child {

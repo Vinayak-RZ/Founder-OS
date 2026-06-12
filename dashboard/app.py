@@ -95,7 +95,7 @@ def run_blocking(port: int = None, host: str = None):
     port = port or config.dashboard_port
     host = host or os.getenv("WEB_HOST", "127.0.0.1")
     logging.getLogger("werkzeug").setLevel(logging.INFO)
-    print(f"\n  Founder OS Web UI → http://{host}:{port}\n")
+    print(f"\n  Nawab OS Web UI → http://{host}:{port}\n")
     app.run(host=host, port=port, debug=False, use_reloader=False, threaded=True)
 
 

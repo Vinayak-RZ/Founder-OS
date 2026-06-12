@@ -585,6 +585,18 @@
     gap: var(--space-xs);
   }
 
+  .infra-health-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .infra-kv {
+    grid-template-columns: 72px minmax(0, 1fr);
+  }
+
+  .integration-grid {
+    grid-template-columns: 1fr;
+  }
+
   .hero-band-cinema {
     margin-left: calc(-1 * var(--space-xs));
     margin-right: calc(-1 * var(--space-xs));
