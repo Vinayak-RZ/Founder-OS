@@ -64,10 +64,21 @@ jobs:
           PRODUCTION_URL: ${{ secrets.PRODUCTION_URL }}
         run: |
           set -euo pipefail
-          if [ -z "${PRODUCTION_URL:-}" ]; then
+          raw="${PRODUCTION_URL:-}"
+          raw="${raw//$'\r'/}"
+          raw="${raw//$'\n'/}"
+          raw="${raw#"${raw%%[![:space:]]*}"}"
+          raw="${raw%"${raw##*[![:space:]]}"}"
+          if [ -z "$raw" ]; then
             echo "PRODUCTION_URL not set — skipping public smoke"
             exit 0
           fi
-          base="${PRODUCTION_URL%/}"
-          curl -sf "$base/api/health" | grep -q '"ok":true'
-          curl -sf "$base/api/auth/status" | grep -q 'pin_required'
+          base="${raw%/}"
+          echo "Smoke testing ${base}"
+          health="$(curl -sSfL --max-time 30 "${base}/api/health")"
+          echo "health: ${health}"
+          echo "${health}" | grep -Eq '"ok"[[:space:]]*:[[:space:]]*true'
+          auth="$(curl -sSfL --max-time 30 "${base}/api/auth/status")"
+          echo "auth: ${auth}"
+          echo "${auth}" | grep -Eq '"pin_required"[[:space:]]*:[[:space:]]*(true|false)'
+          echo "Smoke OK"
