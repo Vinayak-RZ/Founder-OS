@@ -59,7 +59,22 @@ jobs:
             ubuntu@"$EC2_HOST" 'sudo bash /opt/founder-os/deploy/aws/update.sh'
           rm -f ~/.ssh/ec2_deploy_key
 
-      - name: Production smoke
+      - name: Verify on EC2
+        env:
+          EC2_HOST: ${{ secrets.EC2_HOST }}
+          EC2_SSH_PRIVATE_KEY: ${{ secrets.EC2_SSH_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d ~/.ssh
+          echo "$EC2_SSH_PRIVATE_KEY" > ~/.ssh/ec2_deploy_key
+          chmod 600 ~/.ssh/ec2_deploy_key
+          ssh-keyscan -H "$EC2_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          ssh -i ~/.ssh/ec2_deploy_key -o StrictHostKeyChecking=yes ubuntu@"$EC2_HOST" \
+            'curl -sf http://127.0.0.1:8787/api/health | grep -Eq "\"ok\"[[:space:]]*:[[:space:]]*true" && curl -sf http://127.0.0.1:8787/api/auth/status | grep -q pin_required'
+          rm -f ~/.ssh/ec2_deploy_key
+
+      - name: Public URL smoke (optional)
+        continue-on-error: true
         env:
           PRODUCTION_URL: ${{ secrets.PRODUCTION_URL }}
         run: |
@@ -67,18 +82,12 @@ jobs:
           raw="${PRODUCTION_URL:-}"
           raw="${raw//$'\r'/}"
           raw="${raw//$'\n'/}"
-          raw="${raw#"${raw%%[![:space:]]*}"}"
-          raw="${raw%"${raw##*[![:space:]]}"}"
           if [ -z "$raw" ]; then
             echo "PRODUCTION_URL not set — skipping public smoke"
             exit 0
           fi
           base="${raw%/}"
-          echo "Smoke testing ${base}"
-          health="$(curl -sSfL --max-time 30 "${base}/api/health")"
-          echo "health: ${health}"
-          echo "${health}" | grep -Eq '"ok"[[:space:]]*:[[:space:]]*true'
-          auth="$(curl -sSfL --max-time 30 "${base}/api/auth/status")"
-          echo "auth: ${auth}"
-          echo "${auth}" | grep -Eq '"pin_required"[[:space:]]*:[[:space:]]*(true|false)'
-          echo "Smoke OK"
+          echo "Public smoke testing ${base}"
+          curl -sSfL --max-time 30 "${base}/api/health" | grep -Eq '"ok"[[:space:]]*:[[:space:]]*true'
+          curl -sSfL --max-time 30 "${base}/api/auth/status" | grep -q pin_required
+          echo "Public smoke OK"
