@@ -165,6 +165,84 @@ def api_goals():
     })
 
 
+@bp.route("/goals", methods=["POST"])
+def api_goals_create():
+    from agent import store
+    data = request.get_json(silent=True) or {}
+    title = (data.get("title") or "").strip()
+    if not title:
+        return jsonify({"error": "title is required"}), 400
+    try:
+        priority = int(data.get("priority") or 3)
+    except (TypeError, ValueError):
+        priority = 3
+    gid = store.add_goal(
+        title=title,
+        detail=(data.get("detail") or "").strip(),
+        priority=max(1, min(5, priority)),
+    )
+    return jsonify({"id": gid, "goal": {"id": gid, "title": title, "status": "active"}})
+
+
+@bp.route("/goals/<int:gid>", methods=["PATCH"])
+def api_goals_update(gid):
+    from agent import store
+    data = request.get_json(silent=True) or {}
+    status = (data.get("status") or "").strip()
+    if status not in ("active", "done", "cancelled"):
+        return jsonify({"error": "status must be active, done, or cancelled"}), 400
+    store.update_goal(gid, status=status)
+    return jsonify({"ok": True, "id": gid, "status": status})
+
+
+@bp.route("/reminders", methods=["POST"])
+def api_reminders_create():
+    from agent import store
+    data = request.get_json(silent=True) or {}
+    text = (data.get("text") or "").strip()
+    due_at = (data.get("due_at") or "").strip()
+    if not text or not due_at:
+        return jsonify({"error": "text and due_at are required"}), 400
+    rid = store.add_reminder(text=text, due_at=due_at, repeat=(data.get("repeat") or None))
+    return jsonify({"id": rid})
+
+
+@bp.route("/crm/contacts", methods=["POST"])
+def api_contacts_create():
+    from memory.sql_store import add_contact
+    data = request.get_json(silent=True) or {}
+    name = (data.get("name") or "").strip()
+    if not name:
+        return jsonify({"error": "name is required"}), 400
+    try:
+        priority = int(data.get("priority") or 3)
+    except (TypeError, ValueError):
+        priority = 3
+    cid = add_contact(
+        name=name,
+        company=(data.get("company") or "").strip() or None,
+        role=(data.get("role") or "").strip() or None,
+        email=(data.get("email") or "").strip() or None,
+        linkedin_url=(data.get("linkedin_url") or "").strip() or None,
+        status=(data.get("status") or "prospect").strip(),
+        priority=max(1, min(5, priority)),
+        notes=(data.get("notes") or "").strip() or None,
+    )
+    return jsonify({"id": cid})
+
+
+@bp.route("/crm/contacts/<int:cid>", methods=["PATCH"])
+def api_contacts_update(cid):
+    from memory.sql_store import update_contact
+    data = request.get_json(silent=True) or {}
+    allowed = {"name", "company", "role", "email", "status", "priority", "notes", "linkedin_url"}
+    payload = {k: v for k, v in data.items() if k in allowed}
+    if not payload:
+        return jsonify({"error": "no valid fields"}), 400
+    update_contact(cid, **payload)
+    return jsonify({"ok": True, "id": cid})
+
+
 @bp.route("/memory/search")
 def api_memory_search():
     q = (request.args.get("q") or "").strip()
@@ -409,6 +487,29 @@ def api_agent_pause():
     return jsonify({"agent_paused": paused})
 
 
+@bp.route("/agent/config", methods=["POST"])
+def api_agent_config():
+    """Session-level autonomy / approval overrides (mirrors .env until restart)."""
+    import os
+    from config import config
+    data = request.get_json(silent=True) or {}
+    if "autonomy_level" in data:
+        level = (data.get("autonomy_level") or "").strip().lower()
+        if level not in ("cautious", "balanced", "autonomous"):
+            return jsonify({"error": "autonomy_level must be cautious, balanced, or autonomous"}), 400
+        os.environ["AUTONOMY_LEVEL"] = level
+        config.autonomy_level = level
+    if "auto_approve" in data:
+        val = bool(data.get("auto_approve"))
+        os.environ["AUTO_APPROVE"] = "true" if val else "false"
+        config.auto_approve = val
+    return jsonify({
+        "autonomy_level": config.autonomy_level,
+        "auto_approve": config.auto_approve,
+        "agent_paused": config.agent_paused,
+    })
+
+
 @bp.route("/upload", methods=["POST"])
 def api_upload():
     """Upload a document for the agent to read."""
@@ -494,10 +595,127 @@ def api_world_vault(world_id):
         return jsonify({"error": "world not found"}), 404
     tpl = w.get("template") or template_for_kind(w.get("kind", "project"))
     structure = _safe(
-        lambda: knowledge_vault.vault_structure(world_id, w.get("slug") or world_id, tpl),
+        lambda: knowledge_vault.vault_structure(world_id, w.get("slug") or world_id, tpl, world=w),
         {},
     )
     return jsonify({"world": w, "vault": structure})
+
+
+@bp.route("/worlds/<world_id>/vault/documents")
+def api_vault_documents_list(world_id):
+    from memory import worlds as hierarchical_worlds
+    from memory.vault_documents import list_documents
+    w = hierarchical_worlds.get(world_id)
+    if not w:
+        return jsonify({"error": "world not found"}), 404
+    facet = (request.args.get("facet_id") or "").strip() or None
+    return jsonify({"documents": _safe(lambda: list_documents(world_id, facet), [])})
+
+
+@bp.route("/worlds/<world_id>/vault/documents", methods=["POST"])
+def api_vault_documents_create(world_id):
+    from memory import worlds as hierarchical_worlds
+    from memory import vault_documents
+    from memory.world_templates import template_for_kind
+    w = hierarchical_worlds.get(world_id)
+    if not w:
+        return jsonify({"error": "world not found"}), 404
+    tpl = w.get("template") or template_for_kind(w.get("kind", "project"))
+    slug = w.get("slug") or world_id
+
+    if request.files and "file" in request.files:
+        f = request.files["file"]
+        raw = f.read()
+        title = (request.form.get("title") or f.filename or "Document").strip()
+        facet_id = (request.form.get("facet_id") or "docs").strip()
+        description = (request.form.get("description") or "").strip()
+        try:
+            doc = vault_documents.create_document(
+                world_id, slug, tpl, facet_id, title, description,
+                file_bytes=raw, filename=f.filename or "upload.bin",
+            )
+        except (ValueError, RuntimeError) as e:
+            return jsonify({"error": str(e)}), 400
+        return jsonify({"document": doc})
+
+    data = request.get_json(silent=True) or {}
+    title = (data.get("title") or "").strip()
+    facet_id = (data.get("facet_id") or "docs").strip()
+    description = (data.get("description") or "").strip()
+    text_content = data.get("content") or data.get("text_content")
+    if text_content is None and title and description:
+        text_content = f"# {title}\n\n{description}"
+    try:
+        doc = vault_documents.create_document(
+            world_id, slug, tpl, facet_id, title, description,
+            text_content=str(text_content) if text_content is not None else None,
+            filename=(data.get("filename") or "").strip(),
+        )
+    except (ValueError, RuntimeError) as e:
+        return jsonify({"error": str(e)}), 400
+    return jsonify({"document": doc})
+
+
+@bp.route("/worlds/<world_id>/vault/documents/<int:doc_id>", methods=["PATCH"])
+def api_vault_documents_update(world_id, doc_id):
+    from memory import worlds as hierarchical_worlds
+    from memory import vault_documents
+    from memory.world_templates import template_for_kind
+    w = hierarchical_worlds.get(world_id)
+    if not w:
+        return jsonify({"error": "world not found"}), 404
+    doc = vault_documents.get_document(doc_id)
+    if not doc or doc.get("world_id") != world_id:
+        return jsonify({"error": "document not found"}), 404
+    tpl = w.get("template") or template_for_kind(w.get("kind", "project"))
+    data = request.get_json(silent=True) or {}
+    try:
+        updated = vault_documents.update_document(
+            doc_id,
+            title=data.get("title"),
+            description=data.get("description"),
+            facet_id=data.get("facet_id"),
+            text_content=data.get("content"),
+            template_id=tpl,
+        )
+    except (ValueError, RuntimeError) as e:
+        return jsonify({"error": str(e)}), 400
+    return jsonify({"document": updated})
+
+
+@bp.route("/worlds/<world_id>/vault/documents/<int:doc_id>", methods=["DELETE"])
+def api_vault_documents_delete(world_id, doc_id):
+    from memory import worlds as hierarchical_worlds
+    from memory import vault_documents
+    w = hierarchical_worlds.get(world_id)
+    if not w:
+        return jsonify({"error": "world not found"}), 404
+    doc = vault_documents.get_document(doc_id)
+    if not doc or doc.get("world_id") != world_id:
+        return jsonify({"error": "document not found"}), 404
+    vault_documents.delete_document(doc_id)
+    return jsonify({"ok": True, "id": doc_id})
+
+
+@bp.route("/worlds/<world_id>/vault/documents/<int:doc_id>/content")
+def api_vault_documents_content(world_id, doc_id):
+    from integrations import object_storage
+    from memory import worlds as hierarchical_worlds
+    from memory import vault_documents
+    w = hierarchical_worlds.get(world_id)
+    if not w:
+        return jsonify({"error": "world not found"}), 404
+    doc = vault_documents.get_document(doc_id)
+    if not doc or doc.get("world_id") != world_id:
+        return jsonify({"error": "document not found"}), 404
+    raw = object_storage.get_bytes(doc.get("storage_key") or "")
+    if raw is None:
+        return jsonify({"error": "content not found"}), 404
+    try:
+        text = raw.decode("utf-8")
+    except UnicodeDecodeError:
+        return jsonify({"error": "binary content — download only", "size": len(raw)}), 415
+    return jsonify({"document": doc, "content": text})
 
 
 @bp.route("/worlds/<world_id>/vault/ingest", methods=["POST"])

@@ -234,8 +234,33 @@ body {
 .topbar-actions {
   display: flex;
   gap: var(--space-sm);
-  flex-shrink: 0;
+  flex-shrink: 1;
+  flex-wrap: wrap;
   align-items: center;
+  justify-content: flex-end;
+  min-width: 0;
+}
+
+@media (max-width: 1100px) {
+  .topbar {
+    flex-wrap: wrap;
+    align-items: flex-start;
+    padding: var(--space-sm) var(--space-md);
+  }
+
+  .topbar-lead {
+    flex: 1 1 200px;
+  }
+
+  .topbar-actions {
+    flex: 1 1 100%;
+    justify-content: flex-start;
+  }
+
+  .world-select-wrap {
+    flex: 1 1 180px;
+    max-width: 100%;
+  }
 }
 
 .world-select-wrap {
@@ -817,6 +842,21 @@ td {
   display: block;
 }
 
+.chart-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 120px;
+  padding: var(--space-sm);
+  text-align: center;
+  font-size: var(--text-sm);
+  line-height: 1.45;
+}
+
+.chart-empty[hidden] {
+  display: none;
+}
+
 .chart-legend {
   display: flex;
   flex-wrap: wrap;
@@ -890,8 +930,8 @@ td {
 /* Agent fleet */
 .agent-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-  gap: var(--space-xs);
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: var(--space-sm);
 }
 
 .agent-grid--specialists {
@@ -1231,22 +1271,45 @@ td {
 }
 
 .agent-card-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  gap: var(--space-xxs);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    "title status"
+    "meta meta";
+  gap: 6px 10px;
+  align-items: start;
 }
 
 .agent-card-title-row {
   display: flex;
   align-items: flex-start;
   gap: 12px;
-  flex: 1;
+  grid-area: title;
+  min-width: 0;
+}
+
+.agent-card-title-row > div {
   min-width: 0;
 }
 
 .agent-card-title-row h3 {
   margin-top: 2px;
+  overflow-wrap: anywhere;
+}
+
+.agent-card-head .agent-status {
+  grid-area: status;
+  justify-self: end;
+  align-self: start;
+  white-space: nowrap;
+  padding-top: 4px;
+}
+
+.agent-card-head .agent-meta {
+  grid-area: meta;
+  margin: 0;
+  padding-top: 2px;
+  border-top: 1px solid var(--color-hairline);
 }
 
 .agent-card h3 {
@@ -2444,6 +2507,210 @@ td {
   display: flex;
   align-items: center;
   justify-content: space-between;
+}
+
+/* Human-first operator UI */
+
+.operator-panel {
+  padding: var(--space-md);
+}
+
+.operator-panel__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-sm);
+  margin-bottom: var(--space-md);
+}
+
+.operator-panel__status {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-xxs);
+}
+
+.operator-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: var(--space-sm);
+}
+
+.operator-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  padding: var(--space-sm);
+  text-align: left;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--color-hairline);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.operator-card:hover {
+  border-color: var(--color-accent);
+  background: rgba(247, 84, 64, 0.06);
+}
+
+.operator-card--alert {
+  border-color: var(--color-accent);
+}
+
+.operator-card__title {
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+.operator-card__desc {
+  font-size: 0.75rem;
+  color: var(--color-muted);
+  line-height: 1.35;
+}
+
+.human-panel__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-sm);
+  margin-bottom: var(--space-sm);
+}
+
+.human-panel__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-xxs);
+}
+
+.human-form {
+  display: grid;
+  gap: var(--space-sm);
+  margin-top: var(--space-sm);
+}
+
+.human-form__row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: var(--space-sm);
+}
+
+.human-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.human-field--checkbox {
+  flex-direction: row;
+  align-items: center;
+  gap: var(--space-xs);
+  padding-top: 1.4rem;
+  font-size: 0.875rem;
+}
+
+.human-form__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-xs);
+}
+
+.world-create-panel {
+  margin-top: var(--space-md);
+  padding: var(--space-md);
+}
+
+.world-create-panel__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-sm);
+}
+
+.world-form {
+  display: grid;
+  gap: var(--space-sm);
+  margin-top: var(--space-sm);
+}
+
+.crm-status-select {
+  min-width: 7rem;
+  padding: 4px 8px;
+  font-size: 0.8rem;
+}
+
+.goal-list .goal-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-xs);
+  flex-wrap: wrap;
+}
+
+/* Knowledge graph / vault documents */
+
+.knowledge-panel .vault-facet-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-xxs);
+  margin: var(--space-sm) 0;
+}
+
+.vault-facet-tab {
+  padding: 6px 12px;
+  font-size: 0.8rem;
+  border: 1px solid var(--color-hairline);
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+.vault-facet-tab.is-active {
+  border-color: var(--color-accent);
+  background: rgba(247, 84, 64, 0.1);
+}
+
+.vault-doc-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: var(--space-sm);
+  margin: var(--space-sm) 0;
+}
+
+.vault-doc-card {
+  padding: var(--space-sm);
+  border: 1px solid var(--color-hairline);
+  border-radius: var(--radius-md);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.vault-doc-card__head {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-bottom: var(--space-xxs);
+}
+
+.vault-doc-card__head h4 {
+  margin: 0;
+  font-size: 0.95rem;
+}
+
+.vault-doc-card__actions {
+  display: flex;
+  gap: var(--space-xxs);
+  margin-top: var(--space-xs);
+}
+
+.vault-doc-form {
+  border: 1px solid var(--color-hairline);
+  border-radius: var(--radius-md);
+  padding: var(--space-sm);
+  margin-bottom: var(--space-sm);
 }
 
 .world-create-drawer summary::-webkit-details-marker { display: none; }

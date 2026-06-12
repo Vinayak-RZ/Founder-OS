@@ -33,17 +33,39 @@ let state = {
   activeWorldId: localStorage.getItem("fos_active_world") || "root",
   agentsTab: localStorage.getItem("fos_agents_tab") || "runs",
   expandedRunId: null,
+  ui: {
+    worldCreateOpen: false,
+    crmFormOpen: false,
+    goalsFormOpen: false,
+    reminderFormOpen: false,
+    vaultFacet: null,
+    vaultDocForm: null,
+    vaultDocEdit: null,
+  },
+  _worldTemplates: null,
 };
 let currentView = "dashboard";
-let chatHistory = JSON.parse(localStorage.getItem("fos_chat") || "[]");
+
+function readJsonStorage(key, fallback) {
+  try {
+    const raw = localStorage.getItem(key);
+    return raw ? JSON.parse(raw) : fallback;
+  } catch (e) {
+    console.warn(`[storage] corrupt ${key}, resetting`, e);
+    localStorage.removeItem(key);
+    return fallback;
+  }
+}
+
+let chatHistory = readJsonStorage("fos_chat", []);
 let livePollTimer = null;
 let memoryGraphTab = "graph";
 let worldGraphTab = "hierarchy";
 let lastLiveActive = false;
 
 const TITLES = {
-  dashboard: "Command center",
-  chat: "Chat",
+  dashboard: "Control center",
+  chat: "Ask agent",
   agents: "Agent fleet",
   world: "Worlds",
   approvals: "Approvals",
@@ -55,7 +77,16 @@ const TITLES = {
   settings: "Settings",
 };
 
+const CRM_STATUSES = ["prospect", "contacted", "replied", "meeting", "won", "lost", "nurture"];
+
 const CHART_COLORS = ["#f75440", "#00666b", "#03904a", "#051f13", "#5a403c", "#8f706b", "#e3beb8"];
+
+async function apiUpload(path, formData, method = "POST") {
+  const r = await fetch("/api" + path, { method, body: formData });
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(data.error || r.statusText);
+  return data;
+}
 
 async function api(path, opts = {}) {
   const ctrl = new AbortController();
@@ -240,9 +271,10 @@ function renderLivePanel(live, id = "live-panel") {
 }
 
 function agentBusy(live, agentId) {
-  const actor = live?.active ? live.actor : "";
-  if (agentId === "supervisor") return actor === "user";
-  return actor === `subagent:${agentId}` || actor.includes(agentId);
+  const actor = live?.active ? String(live.actor || "") : "";
+  const id = String(agentId || "");
+  if (id === "supervisor") return actor === "user";
+  return actor === `subagent:${id}` || (id && actor.includes(id));
 }
 
 const AGENT_ROLES = {
@@ -282,7 +314,7 @@ function lastRunForAgent(agentId, runs) {
 
 function collectAgentRuns() {
   const fromApi = state._agentRunsApi || [];
-  const local = JSON.parse(localStorage.getItem("fos_agent_runs") || "[]");
+  const local = readJsonStorage("fos_agent_runs", []);
   const merged = [...local];
   for (const r of fromApi) {
     if (!merged.some(m => m.id === r.id)) merged.push({ ...r, source: "trace" });
@@ -292,7 +324,7 @@ function collectAgentRuns() {
 }
 
 function persistAgentRun(record) {
-  const rows = JSON.parse(localStorage.getItem("fos_agent_runs") || "[]");
+  const rows = readJsonStorage("fos_agent_runs", []);
   rows.unshift(record);
   localStorage.setItem("fos_agent_runs", JSON.stringify(rows.slice(0, 50)));
 }
@@ -539,20 +571,47 @@ async function loadGraphData() {
   }
 }
 
+function chartPanelNote(canvasId, message, show) {
+  const canvas = document.getElementById(canvasId);
+  if (!canvas) return;
+  const panel = canvas.closest(".chart-panel");
+  if (!panel) return;
+  let note = panel.querySelector(".chart-empty");
+  if (!note) {
+    note = document.createElement("p");
+    note.className = "chart-empty muted body-md";
+    panel.appendChild(note);
+  }
+  note.textContent = message;
+  note.hidden = !show;
+  canvas.hidden = show;
+}
+
 function drawDashboardCharts() {
+  const narrow = window.innerWidth < 640;
   const tools = state._world?.tools_by_category || state.about?.tools_by_category || {};
-  const entries = Object.entries(tools).slice(0, 8);
+  const entries = Object.entries(tools).slice(0, narrow ? 5 : 8);
   if (entries.length && $("#chart-tools")) {
+    chartPanelNote("chart-tools", "", false);
     FOSCharts.bar("chart-tools", entries.map(([k]) => k), entries.map(([, v]) => v), { colors: CHART_COLORS });
+  } else {
+    chartPanelNote("chart-tools", "No tool data yet.", true);
   }
   const crm = state.snapshot?.crm?.by_status || {};
-  const segs = Object.entries(crm).map(([k, v]) => ({ label: k, value: v }));
+  const segs = Object.entries(crm).filter(([, v]) => v > 0).map(([k, v]) => ({ label: k, value: v }));
   if (segs.length && $("#chart-crm")) {
+    chartPanelNote("chart-crm", "", false);
     FOSCharts.donut("chart-crm", segs, { centerLabel: "contacts", colors: CHART_COLORS });
+  } else {
+    chartPanelNote("chart-crm", "No CRM contacts yet — add leads in Chat or CRM.", true);
   }
   const hist = [...(state.usage_history || [])].reverse();
-  if (hist.length && $("#chart-usage")) {
-    FOSCharts.spark("chart-usage", hist.map(h => h.llm_calls || h.calls || 0));
+  const points = hist.map(h => h.llm_calls || h.calls || 0);
+  if (points.length && $("#chart-usage")) {
+    chartPanelNote("chart-usage", "", false);
+    FOSCharts.spark("chart-usage", points);
+  } else {
+    chartPanelNote("chart-usage", "No LLM usage in the last 7 days.", true);
   }
 }
 
@@ -606,6 +665,127 @@ function stopLivePoll() {
   if (livePollTimer) { clearInterval(livePollTimer); livePollTimer = null; }
 }
 
+// ── Human operator UI ────────────────────────────────────────────────────────
+
+function renderWorldCreateForm(formId = "world-create-form") {
+  return `
+    <form class="world-form human-form" id="${esc(formId)}">
+      <div class="human-form__row">
+        <label class="human-field"><span class="caption-uppercase">Name</span>
+          <input class="text-input-on-dark" name="name" placeholder="e.g. Stamped Energy" required></label>
+        <label class="human-field"><span class="caption-uppercase">Category</span>
+          <select class="text-input-on-dark" name="kind" id="world-create-kind">
+            <option value="project">Startup / venture</option>
+            <option value="technical">Technical project</option>
+            <option value="idea">Idea / exploration</option>
+            <option value="research">Technical research</option>
+          </select></label>
+        <label class="human-field"><span class="caption-uppercase">Knowledge template</span>
+          <select class="text-input-on-dark" name="template">
+            <option value="startup">Startup — ICP, GTM, product, leads…</option>
+            <option value="technical">Technical — architecture, stack, ADRs…</option>
+            <option value="idea">Idea — hypothesis, research, next steps</option>
+            <option value="research">Research — papers, synthesis, industry</option>
+          </select></label>
+      </div>
+      <label class="human-field"><span class="caption-uppercase">Description</span>
+        <input class="text-input-on-dark" name="description" placeholder="One-line summary"></label>
+      <label class="human-field"><span class="caption-uppercase">Context for agents</span>
+        <textarea class="text-input-on-dark" name="context" rows="3" placeholder="What should agents know when this world is active?"></textarea></label>
+      <div class="human-form__row">
+        <label class="human-field"><span class="caption-uppercase">Local docs path</span>
+          <input class="text-input-on-dark" name="repo_path" placeholder="Optional: C:\\docs\\my-project"></label>
+        <label class="human-field"><span class="caption-uppercase">GitHub repo</span>
+          <input class="text-input-on-dark" name="github_repo" placeholder="Optional: owner/repo"></label>
+      </div>
+      <div class="human-form__actions">
+        <button type="submit" class="button-primary button-sm">Create world</button>
+        <button type="button" class="button-outline-on-dark button-sm" data-toggle-ui="worldCreateOpen">Cancel</button>
+      </div>
+    </form>`;
+}
+
+function renderOperatorPanel() {
+  const cfg = state.config || {};
+  const pending = state.snapshot?.approvals_pending || 0;
+  const paused = cfg.agent_paused;
+  return `
+    <section class="driver-card span-12 operator-panel" aria-label="Direct actions">
+      <div class="operator-panel__head">
+        <div>
+          <p class="section-eyebrow">You drive</p>
+          <h3 class="title-sm">Direct controls</h3>
+          <p class="body-md muted">Manage worlds, CRM, goals, and agent policy yourself. Chat is optional — use it when you want help.</p>
+        </div>
+        <div class="operator-panel__status">
+          <span class="pill ${paused ? "warn" : "ok"}">${paused ? "Agent paused" : "Agent on standby"}</span>
+          <span class="pill info">${esc(cfg.autonomy_level || "balanced")} autonomy</span>
+        </div>
+      </div>
+      <div class="operator-grid">
+        <button type="button" class="operator-card" data-operator="create-world">
+          <span class="operator-card__title">New world</span>
+          <span class="operator-card__desc">Add a venture, project, or idea</span>
+        </button>
+        <button type="button" class="operator-card" data-operator="add-contact">
+          <span class="operator-card__title">Add contact</span>
+          <span class="operator-card__desc">CRM lead or relationship</span>
+        </button>
+        <button type="button" class="operator-card" data-operator="add-goal">
+          <span class="operator-card__title">New goal</span>
+          <span class="operator-card__desc">Track an outcome you own</span>
+        </button>
+        <button type="button" class="operator-card" data-operator="add-reminder">
+          <span class="operator-card__title">Reminder</span>
+          <span class="operator-card__desc">Schedule a follow-up</span>
+        </button>
+        <button type="button" class="operator-card" data-operator="settings">
+          <span class="operator-card__title">Agent policy</span>
+          <span class="operator-card__desc">Autonomy &amp; approvals</span>
+        </button>
+        <button type="button" class="operator-card${pending ? " operator-card--alert" : ""}" data-operator="approvals">
+          <span class="operator-card__title">Approvals${pending ? ` (${pending})` : ""}</span>
+          <span class="operator-card__desc">Review before agents act</span>
+        </button>
+      </div>
+    </section>`;
+}
+
+function openOperatorAction(action) {
+  if (!state.ui) state.ui = {};
+  if (action === "create-world") {
+    state.ui.worldCreateOpen = true;
+    if (currentView === "world") {
+      render();
+      requestAnimationFrame(() => document.getElementById("world-create-panel")?.scrollIntoView({ behavior: "smooth", block: "nearest" }));
+    } else {
+      goView("world");
+      state._scrollWorldCreate = true;
+    }
+    return;
+  }
+  if (action === "add-contact") {
+    state.ui.crmFormOpen = true;
+    if (currentView === "crm") render();
+    else goView("crm");
+    return;
+  }
+  if (action === "add-goal") {
+    state.ui.goalsFormOpen = true;
+    if (currentView === "goals") render();
+    else goView("goals");
+    return;
+  }
+  if (action === "add-reminder") {
+    state.ui.reminderFormOpen = true;
+    if (currentView === "goals") render();
+    else goView("goals");
+    return;
+  }
+  if (action === "settings") goView("settings");
+  if (action === "approvals") goView("approvals");
+}
+
 // ── Views ────────────────────────────────────────────────────────────────────
 
 function renderDashboard() {
@@ -623,7 +803,7 @@ function renderDashboard() {
     ? (fin.runway || (fin.runway_months != null ? fin.runway_months + " mo" : "—"))
     : null;
   const goals = (state.goals || []).slice(0, 5).map(g => `<li>${esc(g.title)}</li>`).join("")
-    || "<li class='muted'>No active goals — set one in Chat.</li>";
+    || "<li class='muted'>No active goals — add one in Goals or use Direct controls.</li>";
   const approvalCell = pending > 0
     ? `<div class="spec-cell race-position-cell"><dt>Approvals</dt><dd>${pending}</dd></div>`
     : `<div class="spec-cell"><dt>Approvals</dt><dd>0</dd></div>`;
@@ -637,13 +817,15 @@ function renderDashboard() {
         <h2 class="title-md">${esc(ownerLabel())}</h2>
       </div>
       <div class="command-header__actions">
-        <button type="button" class="button-primary button-sm" data-goto="chat">Chat</button>
-        <button type="button" class="button-outline-on-dark button-sm" data-goto="agents">Agents</button>
-        <button type="button" class="button-outline-on-dark button-sm" data-goto="world">Worlds</button>
+        <button type="button" class="button-primary button-sm" data-operator="create-world">New world</button>
+        <button type="button" class="button-outline-on-dark button-sm" data-goto="crm">CRM</button>
+        <button type="button" class="button-outline-on-dark button-sm" data-goto="goals">Goals</button>
+        <button type="button" class="button-outline-on-dark button-sm" data-goto="chat">Ask agent</button>
         ${pending > 0 ? `<button type="button" class="button-outline-on-dark button-sm" data-goto="approvals">Approvals (${pending})</button>` : ""}
       </div>
     </header>
     <div class="dashboard-grid">
+      ${renderOperatorPanel()}
       <section class="driver-card span-8">
         ${renderLivePanel(live)}
         <p class="caption-uppercase" style="margin-top:var(--space-md)">Runtime graph</p>
@@ -695,7 +877,7 @@ function renderDashboard() {
           <div class="spec-cell"><dt>Burn</dt><dd class="small">${fmtMoney(fin.monthly_burn)}</dd></div>
           <div class="spec-cell"><dt>MRR</dt><dd class="small">${fmtMoney(fin.mrr)}</dd></div>
           <div class="spec-cell"><dt>Runway</dt><dd class="small">${esc(runway)}</dd></div>
-        </dl>` : `<p class="body-md" style="margin-top:var(--space-sm)">Share cash, burn, and MRR in chat to track runway.</p>`}
+        </dl>` : `<p class="body-md" style="margin-top:var(--space-sm)">Set cash, burn, and MRR in Settings or ask the agent to track runway.</p>`}
       </section>
       <section class="driver-card span-6">
         <p class="caption-uppercase">Active goals</p>
@@ -905,12 +1087,19 @@ function renderWorldInspector(w, snap) {
         </div>
         ${!isRoot ? `
           <label>Name<input class="text-input-on-dark" name="name" value="${esc(w.name || "")}" required></label>
-          <label>Kind
-            <select class="text-input-on-dark" name="kind">
-              <option value="project"${w.kind === "project" ? " selected" : ""}>Project / startup</option>
+          <label>Category
+            <select class="text-input-on-dark" name="kind" id="world-edit-kind">
+              <option value="project"${w.kind === "project" ? " selected" : ""}>Startup / venture</option>
               <option value="idea"${w.kind === "idea" ? " selected" : ""}>Idea</option>
-              <option value="research"${w.kind === "research" ? " selected" : ""}>Research</option>
+              <option value="research"${w.kind === "research" ? " selected" : ""}>Technical research</option>
               <option value="technical"${w.kind === "technical" ? " selected" : ""}>Technical project</option>
+            </select>
+          </label>
+          <label>Knowledge template
+            <select class="text-input-on-dark" name="template" id="world-edit-template">
+              ${(state._worldTemplates || []).map(t =>
+                `<option value="${esc(t.id)}"${(w.template || "") === t.id ? " selected" : ""}>${esc(t.label)}</option>`
+              ).join("") || `<option value="startup"${(w.template || "startup") === "startup" ? " selected" : ""}>Startup / venture</option>`}
             </select>
           </label>` : `
           <label>Name<input class="text-input-on-dark" name="name" value="${esc(w.name || "")}"></label>`}
@@ -998,43 +1187,123 @@ function renderWorldInspector(w, snap) {
     </div>`;
 }
 
+function renderVaultDocForm(w, facets, facetId) {
+  const editing = state.ui?.vaultDocEdit;
+  const fid = facetId || facets[0]?.id || facets[0]?.folder || "docs";
+  const facet = facets.find(f => (f.id || f.folder) === fid) || facets[0] || { label: fid, id: fid };
+  const title = editing ? (editing.title || "") : "";
+  const desc = editing ? (editing.description || "") : "";
+  const editId = editing?.id || "";
+  return `
+    <form class="human-form vault-doc-form" id="vault-doc-form" data-world-id="${esc(w.id)}" data-facet-id="${esc(fid)}">
+      ${editId ? `<input type="hidden" name="doc_id" value="${editId}">` : ""}
+      <div class="human-form__row">
+        <label class="human-field"><span class="caption-uppercase">Category slot</span>
+          <select class="text-input-on-dark" name="facet_id" id="vault-doc-facet">
+            ${facets.map(f => {
+              const id = f.id || f.folder;
+              return `<option value="${esc(id)}"${id === fid ? " selected" : ""}>${esc(f.label)}</option>`;
+            }).join("")}
+          </select></label>
+        <label class="human-field"><span class="caption-uppercase">Title</span>
+          <input class="text-input-on-dark" name="title" required placeholder="e.g. Current ICP" value="${esc(title)}"></label>
+      </div>
+      <label class="human-field"><span class="caption-uppercase">Description (indexed for search)</span>
+        <textarea class="text-input-on-dark" name="description" rows="3" placeholder="Short summary agents use to find this doc. Full content goes to ${esc(vaultStorageLabel())}.">${esc(desc)}</textarea></label>
+      ${editId ? `
+      <label class="human-field"><span class="caption-uppercase">Document body (markdown)</span>
+        <textarea class="text-input-on-dark" name="content" id="vault-doc-content" rows="8" placeholder="Loading…"></textarea></label>` : `
+      <label class="human-field"><span class="caption-uppercase">Upload file</span>
+        <input type="file" name="file" accept=".pdf,.docx,.txt,.md,.markdown,.csv,.json"></label>
+      <label class="human-field"><span class="caption-uppercase">Or paste markdown</span>
+        <textarea class="text-input-on-dark" name="content" rows="6" placeholder="# ICP\n\nTarget: …"></textarea></label>`}
+      <div class="human-form__actions">
+        <button type="submit" class="button-primary button-sm">${editId ? "Update document" : "Add document"}</button>
+        <button type="button" class="button-outline-on-dark button-sm" data-vault-cancel-doc>Cancel</button>
+      </div>
+      <p class="world-meta">Slot: <strong>${esc(facet.label)}</strong> · Full files in ${esc(vaultStorageLabel())}; only title + description in vector index.</p>
+    </form>`;
+}
+
+function vaultStorageLabel() {
+  const b = state._worldVault?.storage_backend || state._worldVault?.vault?.storage_backend;
+  return b === "s3" ? "S3" : "local object storage";
+}
+
 function renderWorldVaultPanel(w) {
   if (!w || w.id === "root") return "";
-  const vault = state._worldVault || {};
+  const vault = state._worldVault?.vault || state._worldVault || {};
   const facets = vault.facets || [];
   const counts = vault.domain_counts || {};
-  const cards = facets.map(f => `
-    <article class="vault-facet-card">
-      <div class="vault-facet-head">
-        <h4>${esc(f.label)}</h4>
-        <span class="world-meta">${esc(f.domain_label || f.domain)}</span>
+  const activeFacet = state.ui?.vaultFacet || facets[0]?.id || facets[0]?.folder || null;
+  const showForm = state.ui?.vaultDocForm || state.ui?.vaultDocEdit;
+  const facetDocs = (facets.find(f => (f.id || f.folder) === activeFacet) || {}).documents || [];
+
+  const facetTabs = facets.map(f => {
+    const id = f.id || f.folder;
+    const n = (f.documents || []).length + (f.files || []).length;
+    return `<button type="button" class="vault-facet-tab${id === activeFacet ? " is-active" : ""}" data-vault-facet="${esc(id)}">${esc(f.label)} <span class="badge-pill">${n}</span></button>`;
+  }).join("");
+
+  const docRows = facetDocs.map(d => `
+    <article class="vault-doc-card" data-doc-id="${d.id}">
+      <div class="vault-doc-card__head">
+        <h4>${esc(d.title)}</h4>
+        <span class="world-meta">${esc(d.filename || "")} · ${formatBytes(d.size_bytes)}</span>
       </div>
-      <p class="world-meta">${esc(f.folder)}/ · ${f.file_count || 0} files · ${counts[f.domain] || 0} chunks indexed</p>
-      <ul class="vault-file-list">${(f.files || []).slice(0, 5).map(file =>
-        `<li class="mono">${esc(file.relative || file.name)}</li>`
-      ).join("") || "<li class='muted'>No docs yet</li>"}</ul>
+      <p class="body-md">${esc(d.description || "No description")}</p>
+      <div class="vault-doc-card__actions">
+        <button type="button" class="button-outline-on-dark button-sm" data-vault-edit-doc="${d.id}">Edit</button>
+        <button type="button" class="button-tertiary-text button-sm" data-vault-delete-doc="${d.id}">Remove</button>
+      </div>
     </article>`).join("");
+
+  const diskFiles = (facets.find(f => (f.id || f.folder) === activeFacet) || {}).files || [];
+  const diskList = diskFiles.length ? `<ul class="vault-file-list">${diskFiles.map(file =>
+    `<li class="mono">${esc(file.relative || file.name)} <span class="muted">on disk</span></li>`
+  ).join("")}</ul>` : "";
+
   return `
-    <section class="driver-card vault-panel" style="margin-top:var(--space-md)">
+    <section class="driver-card vault-panel knowledge-panel" style="margin-top:var(--space-md)">
       <div class="vault-panel-head">
         <div>
-          <p class="section-eyebrow">Knowledge vault</p>
-          <h3 class="title-sm">${esc(w.name)} documentation</h3>
-          <p class="world-meta">${esc(vault.vault_path || "")}${vault.repo_path ? ` · linked: ${esc(vault.repo_path)}` : ""}</p>
+          <p class="section-eyebrow">Knowledge graph</p>
+          <h3 class="title-sm">${esc(w.name)} — ${esc(vault.template_id || w.template || "startup")} template</h3>
+          <p class="body-md muted">Category slots for this world type. Add docs with a searchable description; large files live in ${esc(vaultStorageLabel())}.</p>
+          <p class="world-meta">${vault.document_count || 0} registered docs · ${esc(vault.vault_path || "")}${vault.repo_path ? ` · repo: ${esc(vault.repo_path)}` : ""}</p>
         </div>
         <div class="vault-panel-actions">
-          <input class="text-input-on-dark" id="vault-repo-path" placeholder="Local clone path (e.g. C:\\docs\\stamped-energy)" value="${esc(w.repo_path || "")}">
-          <button type="button" class="button-outline-on-dark button-sm" data-vault-link="${esc(w.id)}">Link &amp; ingest</button>
-          <button type="button" class="button-primary button-sm" data-vault-ingest="${esc(w.id)}">Re-ingest vault</button>
+          <button type="button" class="button-primary button-sm" data-vault-add-doc="${esc(w.id)}">Add document</button>
+          <input class="text-input-on-dark" id="vault-repo-path" placeholder="Local repo path" value="${esc(w.repo_path || "")}">
+          <button type="button" class="button-outline-on-dark button-sm" data-vault-link="${esc(w.id)}">Link repo</button>
+          <button type="button" class="button-outline-on-dark button-sm" data-vault-ingest="${esc(w.id)}">Re-ingest</button>
         </div>
       </div>
+      <div class="vault-facet-tabs" role="tablist">${facetTabs || "<span class='muted'>No categories</span>"}</div>
+      ${showForm ? renderVaultDocForm(w, facets, activeFacet) : ""}
+      <div class="vault-doc-grid">${docRows || "<p class='body-md muted'>No documents in this slot yet — add your ICP, GTM notes, research, etc.</p>"}</div>
+      ${diskList}
       <div class="vault-search-row">
-        <input class="text-input-on-dark" id="vault-search-q" placeholder="Query this world's docs…">
+        <input class="text-input-on-dark" id="vault-search-q" placeholder="Search descriptions in this world…">
         <button type="button" class="button-outline-on-dark button-sm" data-vault-search="${esc(w.id)}">Search</button>
       </div>
       <pre class="vault-search-results mono" id="vault-search-results" hidden></pre>
-      <div class="vault-facet-grid">${cards || "<p class='body-md muted'>Loading vault…</p>"}</div>
+      <details class="vault-legacy-facets" style="margin-top:var(--space-md)">
+        <summary class="caption-uppercase">All slots overview</summary>
+        <div class="vault-facet-grid" style="margin-top:var(--space-sm)">${facets.map(f => `
+          <article class="vault-facet-card">
+            <div class="vault-facet-head"><h4>${esc(f.label)}</h4><span class="badge-pill">${f.file_count || 0}</span></div>
+            <p class="world-meta">${esc(f.folder)}/ · ${counts[f.domain] || 0} vectors</p>
+          </article>`).join("")}</div>
+      </details>
     </section>`;
+}
+
+function formatBytes(n) {
+  const b = Number(n) || 0;
+  if (b < 1024) return `${b} B`;
+  if (b < 1048576) return `${(b / 1024).toFixed(1)} KB`;
+  return `${(b / 1048576).toFixed(1)} MB`;
 }
 
 function renderWorld() {
@@ -1053,7 +1322,7 @@ function renderWorld() {
       <section class="worlds-hero">
         <div class="worlds-hero-lead">
           <h2>${esc(founder)}'s world map</h2>
-          <p><strong>Aggregator view</strong> — track parallel ventures, link doc repos per world, query the vault. Deep work stays in Cursor; Founder OS surfaces status and outreach.</p>
+          <p><strong>Your venture map</strong> — create worlds, set context, link doc repos, and switch active context. You define each world; agents read what you write.</p>
         </div>
         <div class="worlds-stat">
           <span class="n">${children.length + 1}</span>
@@ -1109,23 +1378,19 @@ function renderWorld() {
 
       ${!isRootWorld(selected) ? renderWorldVaultPanel(selected) : ""}
 
-      <details class="world-create-drawer">
-        <summary>Create sub-world <span class="muted">+</span></summary>
-        <form class="world-form" id="world-create-form">
-          <input class="text-input-on-dark" name="name" placeholder="Name — e.g. Stamped Energy" required>
-          <select class="text-input-on-dark" name="kind">
-            <option value="project">Startup / venture</option>
-            <option value="technical">Technical project</option>
-            <option value="idea">Idea</option>
-            <option value="research">Research track</option>
-          </select>
-          <input class="text-input-on-dark" name="repo_path" placeholder="Optional: local docs repo path to link on create">
-          <input class="text-input-on-dark" name="github_repo" placeholder="Optional: GitHub repo (owner/name) for reference">
-          <input class="text-input-on-dark" name="description" placeholder="Short description">
-          <textarea class="text-input-on-dark" name="context" rows="4" placeholder="What should the agent track in this world?"></textarea>
-          <button type="submit" class="button-primary button-sm">Create world</button>
-        </form>
-      </details>
+      <section class="world-create-panel driver-card${state.ui?.worldCreateOpen ? " is-open" : ""}" id="world-create-panel">
+        <div class="world-create-panel__head">
+          <div>
+            <p class="section-eyebrow">You create</p>
+            <h3 class="title-sm">New world</h3>
+            <p class="body-md muted">Add a venture, project, or idea under your root world. You choose the context — agents only use what you define.</p>
+          </div>
+          <button type="button" class="button-outline-on-dark button-sm" data-toggle-ui="worldCreateOpen" aria-expanded="${state.ui?.worldCreateOpen ? "true" : "false"}">
+            ${state.ui?.worldCreateOpen ? "Hide form" : "Create world"}
+          </button>
+        </div>
+        ${state.ui?.worldCreateOpen ? renderWorldCreateForm("world-create-form") : ""}
+      </section>
     </div>`;
 }
 
@@ -1150,8 +1415,8 @@ function renderChat() {
   return `<div class="chat-shell">
     <header class="chat-header driver-card">
       <div>
-        <p class="section-eyebrow">Chat</p>
-        <h2 class="title-md">${esc(state.config?.company_name || "Founder OS")}</h2>
+        <p class="section-eyebrow">Optional · agent assist</p>
+        <h2 class="title-md">Ask agent</h2>
       </div>
       <div class="chat-header__meta">
         <span class="badge-pill">${esc(activeWorldLabel())}</span>
@@ -1228,36 +1493,131 @@ function renderCrm() {
   const contacts = state._crm?.contacts || [];
   const followups = state._crm?.followups_due || [];
   const pipeline = state._crm?.pipeline || {};
+  const formOpen = !!state.ui?.crmFormOpen;
   const pipeRows = Object.entries(pipeline).map(([k, v]) =>
     `<div class="kv"><span class="k">${esc(k)}</span><span class="v">${v}</span></div>`
   ).join("") || "<p class='muted'>No pipeline data</p>";
 
+  const statusOpts = (cur) => CRM_STATUSES.map(s =>
+    `<option value="${s}"${s === cur ? " selected" : ""}>${esc(s)}</option>`
+  ).join("");
+
   const rows = contacts.slice(0, 50).map(c => `<tr>
     <td>${esc(c.name)}</td><td>${esc(c.company || "—")}</td><td>${esc(c.role || "—")}</td>
-    <td>${esc(c.status || "—")}</td><td class="muted">${esc(c.email || "")}</td></tr>`).join("");
+    <td><select class="text-input-on-dark crm-status-select" data-crm-status="${c.id}" aria-label="Status for ${esc(c.name)}">${statusOpts(c.status || "prospect")}</select></td>
+    <td class="muted">${esc(c.email || "")}</td></tr>`).join("");
 
   const fu = followups.map(c => `<li>${esc(c.name)} @ ${esc(c.company || "?")}</li>`).join("") || "<li class='muted'>None due</li>";
 
   return `<div class="dashboard-grid">
+    <section class="driver-card span-12 human-panel">
+      <div class="human-panel__head">
+        <div>
+          <p class="section-eyebrow">CRM</p>
+          <h3 class="title-sm">Contacts &amp; pipeline</h3>
+          <p class="body-md muted">Add and update leads yourself. Status changes save immediately.</p>
+        </div>
+        <button type="button" class="button-primary button-sm" data-toggle-ui="crmFormOpen">${formOpen ? "Hide form" : "Add contact"}</button>
+      </div>
+      ${formOpen ? `
+      <form class="human-form" id="crm-create-form">
+        <div class="human-form__row">
+          <label class="human-field"><span class="caption-uppercase">Name</span>
+            <input class="text-input-on-dark" name="name" required placeholder="Full name"></label>
+          <label class="human-field"><span class="caption-uppercase">Company</span>
+            <input class="text-input-on-dark" name="company" placeholder="Company"></label>
+        </div>
+        <div class="human-form__row">
+          <label class="human-field"><span class="caption-uppercase">Role</span>
+            <input class="text-input-on-dark" name="role" placeholder="Title"></label>
+          <label class="human-field"><span class="caption-uppercase">Email</span>
+            <input class="text-input-on-dark" name="email" type="email" placeholder="email@company.com"></label>
+        </div>
+        <div class="human-form__row">
+          <label class="human-field"><span class="caption-uppercase">Status</span>
+            <select class="text-input-on-dark" name="status">${statusOpts("prospect")}</select></label>
+          <label class="human-field"><span class="caption-uppercase">LinkedIn</span>
+            <input class="text-input-on-dark" name="linkedin_url" placeholder="https://linkedin.com/in/…"></label>
+        </div>
+        <label class="human-field"><span class="caption-uppercase">Notes</span>
+          <textarea class="text-input-on-dark" name="notes" rows="2" placeholder="Context for follow-ups"></textarea></label>
+        <div class="human-form__actions">
+          <button type="submit" class="button-primary button-sm">Save contact</button>
+          <button type="button" class="button-outline-on-dark button-sm" data-toggle-ui="crmFormOpen">Cancel</button>
+        </div>
+      </form>` : ""}
+    </section>
     <section class="driver-card span-4"><p class="caption-uppercase">Pipeline</p><div style="margin-top:var(--space-sm)">${pipeRows}</div></section>
     <section class="driver-card span-8"><p class="caption-uppercase">Follow-ups due</p><ul class="list-plain" style="margin-top:var(--space-sm)">${fu}</ul></section>
     <section class="band-light span-12">
       <p class="caption-uppercase" style="color:var(--color-muted)">Contacts (${contacts.length})</p>
       <div class="table-wrap"><table><thead><tr><th>Name</th><th>Company</th><th>Role</th><th>Status</th><th>Email</th></tr></thead>
-      <tbody>${rows || '<tr><td colspan="5" class="muted">No contacts yet — ask the agent to add leads.</td></tr>'}</tbody></table></div>
+      <tbody>${rows || '<tr><td colspan="5" class="muted">No contacts yet — use Add contact above.</td></tr>'}</tbody></table></div>
     </section>
   </div>`;
 }
 
 function renderGoals() {
   const g = state._goals || {};
-  const goals = (g.active || []).map(x => `<li><strong>${esc(x.title)}</strong>${x.detail ? " — " + esc(x.detail) : ""}</li>`).join("") || "<li class='muted'>No active goals</li>";
+  const goalsFormOpen = !!state.ui?.goalsFormOpen;
+  const reminderFormOpen = !!state.ui?.reminderFormOpen;
+  const goals = (g.active || []).map(x => `<li class="goal-row">
+    <span><strong>${esc(x.title)}</strong>${x.detail ? " — " + esc(x.detail) : ""}</span>
+    <button type="button" class="button-outline-on-dark button-sm" data-goal-done="${x.id}">Done</button>
+  </li>`).join("") || "<li class='muted'>No active goals — add one below.</li>";
   const tasks = (state.tasks || []).map(t => `<li>${esc(t.title)} <span class="muted">P${t.priority || 3}</span></li>`).join("") || "<li class='muted'>No open tasks</li>";
   const rems = (g.reminders || []).map(r => `<li>${esc(r.text)} <span class="muted">${esc(r.due_at)}</span></li>`).join("") || "<li class='muted'>No reminders</li>";
   const plans = (g.plans || []).map(p => `<li>${esc(p.goal)}</li>`).join("") || "<li class='muted'>No open plans</li>";
 
   return `<div class="dashboard-grid">
-    <section class="driver-card span-6"><p class="caption-uppercase">Active goals</p><ul class="list-plain" style="margin-top:var(--space-sm)">${goals}</ul></section>
+    <section class="driver-card span-12 human-panel">
+      <div class="human-panel__head">
+        <div>
+          <p class="section-eyebrow">Goals</p>
+          <h3 class="title-sm">Outcomes you own</h3>
+          <p class="body-md muted">Track goals and reminders directly — no agent required.</p>
+        </div>
+        <div class="human-panel__actions">
+          <button type="button" class="button-primary button-sm" data-toggle-ui="goalsFormOpen">${goalsFormOpen ? "Hide goal form" : "New goal"}</button>
+          <button type="button" class="button-outline-on-dark button-sm" data-toggle-ui="reminderFormOpen">${reminderFormOpen ? "Hide reminder" : "Reminder"}</button>
+        </div>
+      </div>
+      ${goalsFormOpen ? `
+      <form class="human-form" id="goal-create-form">
+        <div class="human-form__row">
+          <label class="human-field"><span class="caption-uppercase">Goal</span>
+            <input class="text-input-on-dark" name="title" required placeholder="What are you driving toward?"></label>
+          <label class="human-field"><span class="caption-uppercase">Priority</span>
+            <select class="text-input-on-dark" name="priority">
+              <option value="1">P1 — critical</option>
+              <option value="2">P2 — high</option>
+              <option value="3" selected>P3 — normal</option>
+              <option value="4">P4 — low</option>
+              <option value="5">P5 — someday</option>
+            </select></label>
+        </div>
+        <label class="human-field"><span class="caption-uppercase">Detail</span>
+          <textarea class="text-input-on-dark" name="detail" rows="2" placeholder="Optional context"></textarea></label>
+        <div class="human-form__actions">
+          <button type="submit" class="button-primary button-sm">Add goal</button>
+          <button type="button" class="button-outline-on-dark button-sm" data-toggle-ui="goalsFormOpen">Cancel</button>
+        </div>
+      </form>` : ""}
+      ${reminderFormOpen ? `
+      <form class="human-form" id="reminder-create-form" style="margin-top:var(--space-sm)">
+        <div class="human-form__row">
+          <label class="human-field"><span class="caption-uppercase">Reminder</span>
+            <input class="text-input-on-dark" name="text" required placeholder="Follow up with…"></label>
+          <label class="human-field"><span class="caption-uppercase">Due</span>
+            <input class="text-input-on-dark" name="due_at" type="datetime-local" required></label>
+        </div>
+        <div class="human-form__actions">
+          <button type="submit" class="button-primary button-sm">Save reminder</button>
+          <button type="button" class="button-outline-on-dark button-sm" data-toggle-ui="reminderFormOpen">Cancel</button>
+        </div>
+      </form>` : ""}
+    </section>
+    <section class="driver-card span-6"><p class="caption-uppercase">Active goals</p><ul class="list-plain goal-list" style="margin-top:var(--space-sm)">${goals}</ul></section>
     <section class="driver-card span-6"><p class="caption-uppercase">Open tasks</p><ul class="list-plain" style="margin-top:var(--space-sm)">${tasks}</ul></section>
     <section class="driver-card span-6"><p class="caption-uppercase">Reminders</p><ul class="list-plain" style="margin-top:var(--space-sm)">${rems}</ul></section>
     <section class="driver-card span-6"><p class="caption-uppercase">Plans &amp; projects</p><ul class="list-plain" style="margin-top:var(--space-sm)">${plans}</ul></section>
@@ -1344,6 +1704,7 @@ function integrationCard(name, connected, detail) {
 function renderSettings() {
   const c = state.config || {};
   const integ = c.integrations || {};
+  const level = (c.autonomy_level || "balanced").toLowerCase();
   const pauseBtn = c.agent_paused
     ? `<button type="button" class="button-primary" id="toggle-pause">Resume agent</button>`
     : `<button type="button" class="button-outline-on-dark" id="toggle-pause">Pause agent</button>`;
@@ -1354,15 +1715,30 @@ function renderSettings() {
         <div class="spec-cell"><dt>Name</dt><dd class="small">${esc(c.my_name)}</dd></div>
         <div class="spec-cell"><dt>Company</dt><dd class="small">${esc(c.company_name)}</dd></div>
       </dl>
+      <p class="body-md muted" style="margin-top:var(--space-sm)">Edit identity in <code>.env</code> — restart to persist.</p>
     </section>
-    <section class="driver-card span-4">
-      <p class="caption-uppercase">Agent control</p>
-      <dl class="stat-grid" style="margin-top:var(--space-sm)">
-        <div class="spec-cell"><dt>Autonomy</dt><dd class="small">${esc(c.autonomy_level)}</dd></div>
-        <div class="spec-cell"><dt>Auto-approve</dt><dd class="small">${c.auto_approve ? "On" : "Off"}</dd></div>
-        <div class="spec-cell"><dt>Paused</dt><dd class="small">${c.agent_paused ? "Yes" : "No"}</dd></div>
-      </dl>
-      ${pauseBtn}
+    <section class="driver-card span-8 human-panel">
+      <p class="section-eyebrow">Your policy</p>
+      <h3 class="title-sm">Agent behavior</h3>
+      <p class="body-md muted" style="margin-bottom:var(--space-sm)">You set how much the agent can do without asking. Changes apply for this session.</p>
+      <form class="human-form" id="agent-config-form">
+        <div class="human-form__row">
+          <label class="human-field"><span class="caption-uppercase">Autonomy</span>
+            <select class="text-input-on-dark" name="autonomy_level">
+              <option value="cautious"${level === "cautious" ? " selected" : ""}>Cautious — ask before most actions</option>
+              <option value="balanced"${level === "balanced" ? " selected" : ""}>Balanced — routine tools auto-run</option>
+              <option value="autonomous"${level === "autonomous" ? " selected" : ""}>Autonomous — minimal prompts</option>
+            </select></label>
+          <label class="human-field human-field--checkbox">
+            <input type="checkbox" name="auto_approve" value="1"${c.auto_approve ? " checked" : ""}>
+            <span>Auto-approve low-risk tool calls</span>
+          </label>
+        </div>
+        <div class="human-form__actions">
+          <button type="submit" class="button-primary button-sm">Save policy</button>
+          ${pauseBtn}
+        </div>
+      </form>
     </section>
     <section class="driver-card span-4">
       <p class="caption-uppercase">Channels</p>
@@ -1421,6 +1797,9 @@ async function loadViewData(view) {
   if (view === "world") {
     state._worldFull = await api("/graph/world");
     state._worldPreviews = state._worldFull?.world_previews || {};
+    if (!state._worldTemplates?.length) {
+      state._worldTemplates = (await api("/world-templates").catch(() => ({}))).templates || [];
+    }
     if (!state.inspectorWorldId) state.inspectorWorldId = currentWorldId();
     await loadWorldVault(inspectorWorldId());
   }
@@ -1435,12 +1814,14 @@ async function loadViewData(view) {
     state._agentRunsApi = (await api("/agents/runs").catch(() => ({}))).runs || state._agentRunsApi;
   }
   if (view === "dashboard") {
-    state._world = await api("/world");
+    state._world = await api("/world").catch(() => state._world || {});
   }
   await loadGraphData();
 }
 
-const MOBILE_PRIMARY_VIEWS = window.FOS_MOBILE_PRIMARY_VIEWS || new Set(["dashboard", "chat", "agents", "world"]);
+function mobilePrimaryViews() {
+  return window.FOS_MOBILE_PRIMARY_VIEWS || new Set(["dashboard", "chat", "agents", "world"]);
+}
 
 function closeMobileShell() {
   document.getElementById("sidebar")?.classList.remove("is-open");
@@ -1464,7 +1845,7 @@ function openSidebar() {
 }
 
 function syncMobileNav(view) {
-  const primary = MOBILE_PRIMARY_VIEWS;
+  const primary = mobilePrimaryViews();
   document.querySelectorAll(".mobile-tab").forEach(tab => {
     const v = tab.dataset.mobileView;
     if (v === "more") tab.classList.toggle("is-active", !primary.has(view));
@@ -1485,18 +1866,34 @@ function goView(view) {
   if (["dashboard", "agents", "chat", "activity", "world"].includes(view)) startLivePoll();
   else stopLivePoll();
   render();
-  loadViewData(view).then(() => { render(); afterRender(); }).catch(console.error);
+  loadViewData(view).then(() => {
+    render();
+    afterRender();
+    if (state._scrollWorldCreate && view === "world") {
+      state._scrollWorldCreate = false;
+      requestAnimationFrame(() => document.getElementById("world-create-panel")?.scrollIntoView({ behavior: "smooth", block: "nearest" }));
+    }
+  }).catch(console.error);
 }
 
 function afterRender() {
-  if (currentView === "dashboard") drawDashboardCharts();
-  drawGraphs();
+  try {
+    if (currentView === "dashboard") drawDashboardCharts();
+  } catch (e) {
+    console.warn("dashboard charts skipped:", e);
+  }
+  try {
+    drawGraphs();
+  } catch (e) {
+    console.warn("graphs skipped:", e);
+  }
   pollLive();
   if (state._motionSkipOnce) {
     state._motionSkipOnce = false;
   } else {
     FOSMotion?.runView?.(currentView);
   }
+  FOSMotion?.ensureContentVisible?.();
 }
 
 function animateLatestChatMessage() {
@@ -1508,13 +1905,26 @@ function animateLatestChatMessage() {
 }
 
 function render() {
+  const el = $("#content");
+  if (!el) return;
   const fns = {
     dashboard: renderDashboard, chat: renderChat, agents: renderAgents,
     world: renderWorld, approvals: renderApprovals, crm: renderCrm, goals: renderGoals,
     memory: renderMemory, tools: renderTools, activity: renderActivity,
     settings: renderSettings,
   };
-  $("#content").innerHTML = (fns[currentView] || renderDashboard)();
+  try {
+    el.innerHTML = (fns[currentView] || renderDashboard)();
+  } catch (e) {
+    console.error("render failed:", e);
+    el.innerHTML = `<div class="driver-card span-12">
+      <p class="title-md">Dashboard could not render</p>
+      <p class="body-md muted" style="margin-top:8px">${esc(e?.message || String(e))}</p>
+      <button type="button" class="button-primary button-sm" id="render-retry" style="margin-top:12px">Retry</button>
+    </div>`;
+    $("#render-retry")?.addEventListener("click", () => boot());
+    return;
+  }
   document.querySelector(".content")?.classList.toggle("content--worlds", currentView === "world");
   document.querySelector(".content")?.classList.toggle("content--wide", ["agents", "world", "activity", "chat"].includes(currentView));
   document.querySelector(".content")?.classList.toggle("content--chat", currentView === "chat");
@@ -1524,8 +1934,8 @@ function render() {
   bindViewEvents();
   afterRender();
   if (currentView === "chat") {
-    const el = $("#chat-messages");
-    if (el) el.scrollTop = el.scrollHeight;
+    const chatEl = $("#chat-messages");
+    if (chatEl) chatEl.scrollTop = chatEl.scrollHeight;
   }
 }
 
@@ -1546,6 +1956,13 @@ function bindViewEvents() {
   $("#memory-q")?.addEventListener("keydown", e => { if (e.key === "Enter") searchMemory(); });
   $("#toggle-pause")?.addEventListener("click", togglePause);
   $$("[data-goto]").forEach(b => b.addEventListener("click", () => goView(b.dataset.goto)));
+  $$("[data-operator]").forEach(b => b.addEventListener("click", () => openOperatorAction(b.dataset.operator)));
+  $$("[data-toggle-ui]").forEach(b => b.addEventListener("click", () => {
+    const key = b.dataset.toggleUi;
+    if (!state.ui) state.ui = {};
+    state.ui[key] = !state.ui[key];
+    render();
+  }));
   $$("[data-select-specialist]").forEach(b => b.addEventListener("click", () => selectSpecialist(b.dataset.selectSpecialist || "")));
   $("#specialist-select-agents")?.addEventListener("change", e => selectSpecialist(e.target.value));
   $("#rag-mode-select")?.addEventListener("change", e => {
@@ -1574,6 +1991,26 @@ function bindViewEvents() {
     e.preventDefault();
     createWorldFromForm(e.target);
   });
+  $("#crm-create-form")?.addEventListener("submit", e => {
+    e.preventDefault();
+    submitCrmContact(e.target);
+  });
+  $("#goal-create-form")?.addEventListener("submit", e => {
+    e.preventDefault();
+    submitGoal(e.target);
+  });
+  $("#reminder-create-form")?.addEventListener("submit", e => {
+    e.preventDefault();
+    submitReminder(e.target);
+  });
+  $("#agent-config-form")?.addEventListener("submit", e => {
+    e.preventDefault();
+    saveAgentConfig(e.target);
+  });
+  $$("[data-goal-done]").forEach(b => b.addEventListener("click", () => markGoalDone(b.dataset.goalDone)));
+  $$("[data-crm-status]").forEach(sel => sel.addEventListener("change", () => {
+    updateCrmStatus(sel.dataset.crmStatus, sel.value);
+  }));
   $("#world-edit-form")?.addEventListener("submit", e => {
     e.preventDefault();
     saveWorldEdit(e.target);
@@ -1603,6 +2040,28 @@ function bindViewEvents() {
   $$("[data-vault-ingest]").forEach(b => b.addEventListener("click", () => vaultIngest(b.dataset.vaultIngest)));
   $$("[data-vault-link]").forEach(b => b.addEventListener("click", () => vaultLinkRepo(b.dataset.vaultLink)));
   $$("[data-vault-search]").forEach(b => b.addEventListener("click", () => vaultSearch(b.dataset.vaultSearch)));
+  $("#vault-doc-form")?.addEventListener("submit", e => { e.preventDefault(); submitVaultDoc(e.target); });
+  $$("[data-vault-facet]").forEach(b => b.addEventListener("click", () => {
+    if (!state.ui) state.ui = {};
+    state.ui.vaultFacet = b.dataset.vaultFacet;
+    render();
+  }));
+  $$("[data-vault-add-doc]").forEach(b => b.addEventListener("click", () => {
+    if (!state.ui) state.ui = {};
+    state.ui.vaultDocForm = true;
+    state.ui.vaultDocEdit = null;
+    render();
+  }));
+  $$("[data-vault-cancel-doc]").forEach(b => b.addEventListener("click", () => {
+    if (state.ui) { state.ui.vaultDocForm = false; state.ui.vaultDocEdit = null; }
+    render();
+  }));
+  $$("[data-vault-edit-doc]").forEach(b => b.addEventListener("click", () => {
+    startVaultDocEdit(inspectorWorldId(), b.dataset.vaultEditDoc);
+  }));
+  $$("[data-vault-delete-doc]").forEach(b => b.addEventListener("click", () => {
+    deleteVaultDoc(inspectorWorldId(), b.dataset.vaultDeleteDoc);
+  }));
 }
 
 async function createWorldFromForm(form) {
@@ -1615,6 +2074,7 @@ async function createWorldFromForm(form) {
       body: JSON.stringify({
         name,
         kind: (fd.get("kind") || "project").toString(),
+        template: (fd.get("template") || "").toString().trim() || undefined,
         description: (fd.get("description") || "").toString().trim(),
         context: (fd.get("context") || "").toString().trim(),
         repo_path: (fd.get("repo_path") || "").toString().trim(),
@@ -1631,6 +2091,113 @@ async function createWorldFromForm(form) {
       render();
     }
     form.reset();
+    if (state.ui) state.ui.worldCreateOpen = false;
+  } catch (e) { alert(e.message); }
+}
+
+async function submitCrmContact(form) {
+  const fd = new FormData(form);
+  const name = (fd.get("name") || "").toString().trim();
+  if (!name) return;
+  try {
+    await api("/crm/contacts", {
+      method: "POST",
+      body: JSON.stringify({
+        name,
+        company: (fd.get("company") || "").toString().trim(),
+        role: (fd.get("role") || "").toString().trim(),
+        email: (fd.get("email") || "").toString().trim(),
+        status: (fd.get("status") || "prospect").toString(),
+        linkedin_url: (fd.get("linkedin_url") || "").toString().trim(),
+        notes: (fd.get("notes") || "").toString().trim(),
+      }),
+    });
+    state._crm = await api("/crm/contacts");
+    if (state.ui) state.ui.crmFormOpen = false;
+    await refresh();
+    render();
+    form.reset();
+  } catch (e) { alert(e.message); }
+}
+
+async function updateCrmStatus(cid, status) {
+  if (!cid || !status) return;
+  try {
+    await api(`/crm/contacts/${encodeURIComponent(cid)}`, {
+      method: "PATCH",
+      body: JSON.stringify({ status }),
+    });
+    state._crm = await api("/crm/contacts");
+    await refresh();
+    render();
+  } catch (e) { alert(e.message); }
+}
+
+async function submitGoal(form) {
+  const fd = new FormData(form);
+  const title = (fd.get("title") || "").toString().trim();
+  if (!title) return;
+  try {
+    await api("/goals", {
+      method: "POST",
+      body: JSON.stringify({
+        title,
+        detail: (fd.get("detail") || "").toString().trim(),
+        priority: parseInt(fd.get("priority") || "3", 10) || 3,
+      }),
+    });
+    state._goals = await api("/goals");
+    if (state.ui) state.ui.goalsFormOpen = false;
+    await refresh();
+    render();
+    form.reset();
+  } catch (e) { alert(e.message); }
+}
+
+async function markGoalDone(gid) {
+  if (!gid) return;
+  try {
+    await api(`/goals/${encodeURIComponent(gid)}`, {
+      method: "PATCH",
+      body: JSON.stringify({ status: "done" }),
+    });
+    state._goals = await api("/goals");
+    await refresh();
+    render();
+  } catch (e) { alert(e.message); }
+}
+
+async function submitReminder(form) {
+  const fd = new FormData(form);
+  const text = (fd.get("text") || "").toString().trim();
+  const dueRaw = (fd.get("due_at") || "").toString().trim();
+  if (!text || !dueRaw) return;
+  const due_at = dueRaw.length === 16 ? `${dueRaw}:00` : dueRaw;
+  try {
+    await api("/reminders", {
+      method: "POST",
+      body: JSON.stringify({ text, due_at }),
+    });
+    state._goals = await api("/goals");
+    if (state.ui) state.ui.reminderFormOpen = false;
+    render();
+    form.reset();
+  } catch (e) { alert(e.message); }
+}
+
+async function saveAgentConfig(form) {
+  const fd = new FormData(form);
+  try {
+    const res = await api("/agent/config", {
+      method: "POST",
+      body: JSON.stringify({
+        autonomy_level: (fd.get("autonomy_level") || "balanced").toString(),
+        auto_approve: fd.get("auto_approve") === "1",
+      }),
+    });
+    state.config = { ...(state.config || {}), ...res };
+    updateStatus();
+    render();
   } catch (e) { alert(e.message); }
 }
 
@@ -1643,7 +2210,11 @@ async function saveWorldEdit(form) {
     description: (fd.get("description") || "").toString(),
     context: (fd.get("context") || "").toString(),
   };
-  if (id !== "root") payload.kind = (fd.get("kind") || "project").toString();
+  if (id !== "root") {
+    payload.kind = (fd.get("kind") || "project").toString();
+    const tpl = (fd.get("template") || "").toString().trim();
+    if (tpl) payload.template = tpl;
+  }
   try {
     const res = await api(`/worlds/${encodeURIComponent(id)}`, {
       method: "PATCH",
@@ -1654,8 +2225,70 @@ async function saveWorldEdit(form) {
     if (currentView === "world") {
       state._worldFull = await api("/graph/world");
       state._worldPreviews = state._worldFull?.world_previews || {};
+      await loadWorldVault(id);
       render();
     } else await refresh();
+  } catch (e) { alert(e.message); }
+}
+
+async function submitVaultDoc(form) {
+  const worldId = form.dataset.worldId;
+  const docId = (form.querySelector("[name=doc_id]")?.value || "").trim();
+  const fd = new FormData(form);
+  const title = (fd.get("title") || "").toString().trim();
+  const facetId = (fd.get("facet_id") || form.dataset.facetId || "docs").toString();
+  const description = (fd.get("description") || "").toString().trim();
+  const content = (fd.get("content") || "").toString();
+  const file = form.querySelector('input[type="file"]')?.files?.[0];
+  try {
+    if (docId) {
+      await api(`/worlds/${encodeURIComponent(worldId)}/vault/documents/${encodeURIComponent(docId)}`, {
+        method: "PATCH",
+        body: JSON.stringify({ title, description, facet_id: facetId, content: content || undefined }),
+      });
+    } else if (file) {
+      const up = new FormData();
+      up.append("file", file);
+      up.append("title", title);
+      up.append("description", description);
+      up.append("facet_id", facetId);
+      await apiUpload(`/worlds/${encodeURIComponent(worldId)}/vault/documents`, up);
+    } else if (content.trim()) {
+      await api(`/worlds/${encodeURIComponent(worldId)}/vault/documents`, {
+        method: "POST",
+        body: JSON.stringify({ title, description, facet_id: facetId, content }),
+      });
+    } else {
+      return alert("Upload a file or paste markdown content.");
+    }
+    if (state.ui) {
+      state.ui.vaultDocForm = false;
+      state.ui.vaultDocEdit = null;
+    }
+    await loadWorldVault(worldId);
+    render();
+  } catch (e) { alert(e.message); }
+}
+
+async function startVaultDocEdit(worldId, docId) {
+  if (!state.ui) state.ui = {};
+  try {
+    const res = await api(`/worlds/${encodeURIComponent(worldId)}/vault/documents/${encodeURIComponent(docId)}/content`);
+    state.ui.vaultDocEdit = res.document;
+    state.ui.vaultDocForm = true;
+    state.ui.vaultFacet = res.document?.facet_id || state.ui.vaultFacet;
+    render();
+    const ta = $("#vault-doc-content");
+    if (ta) ta.value = res.content || "";
+  } catch (e) { alert(e.message); }
+}
+
+async function deleteVaultDoc(worldId, docId) {
+  if (!confirm("Remove this document from the knowledge graph?")) return;
+  try {
+    await api(`/worlds/${encodeURIComponent(worldId)}/vault/documents/${encodeURIComponent(docId)}`, { method: "DELETE" });
+    await loadWorldVault(worldId);
+    render();
   } catch (e) { alert(e.message); }
 }
 
@@ -1958,9 +2591,11 @@ function showBootError(err) {
 async function refresh() {
   const prevWorld = state.activeWorldId;
   const prevSpec = state.selectedSpecialist;
+  const prevUi = state.ui;
   state = { ...state, ...(await api("/state")) };
   state.activeWorldId = prevWorld || state.activeWorldId || "root";
   state.selectedSpecialist = prevSpec ?? state.selectedSpecialist ?? "";
+  state.ui = prevUi || state.ui;
   try {
     populateWorldSelect();
     populateSpecialistSelect();
@@ -2035,6 +2670,20 @@ window.addEventListener("error", (e) => {
   if (!state?.config?.my_name) setConnectionStatus("UI error — hard refresh", "paused");
 });
 
+async function loadBootExtras() {
+  const [agents, world] = await Promise.all([
+    api("/agents").catch(() => ({})),
+    api("/world").catch(() => ({})),
+  ]);
+  state._agents = agents?.specialists?.length ? agents : { ...agents, specialists: agents.specialists || DEFAULT_SPECIALISTS };
+  state._world = world || {};
+  if (!state.worlds?.root && world?.worlds) state.worlds = world.worlds;
+  populateWorldSelect();
+  populateSpecialistSelect();
+  await loadGraphData();
+  render();
+}
+
 async function boot() {
   try {
     await refresh();
@@ -2042,18 +2691,13 @@ async function boot() {
     showBootError(e);
     return;
   }
+  syncMobileNav(currentView);
+  render();
+  startLivePoll();
   try {
-    state._agents = await api("/agents").catch(() => ({}));
-    state._world = await api("/world").catch(() => ({}));
-    populateWorldSelect();
-    populateSpecialistSelect();
-    syncMobileNav(currentView);
-    await loadGraphData();
-    render();
-    startLivePoll();
+    await loadBootExtras();
   } catch (e) {
-    console.error(e);
-    render();
+    console.error("boot extras failed:", e);
   }
 }
 

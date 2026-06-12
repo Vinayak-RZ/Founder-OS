@@ -34,6 +34,14 @@ DOMAIN_LABELS = {
 }
 
 
+def _storage_backend_label() -> str:
+    try:
+        from integrations.object_storage import s3_enabled
+        return "s3" if s3_enabled() else "local"
+    except Exception:
+        return "local"
+
+
 def vault_root() -> Path:
     root = os.getenv("KNOWLEDGE_VAULT_ROOT", "./data/knowledge")
     p = Path(root).resolve()
@@ -250,9 +258,13 @@ def search_vault(
     return hits[: n_results * 2]
 
 
-def vault_structure(world_id: str, world_slug: str, template_id: str) -> dict:
+def vault_structure(world_id: str, world_slug: str, template_id: str, world: dict | None = None) -> dict:
+    from memory.vault_documents import documents_by_facet, effective_facets, list_documents
+
     base = world_vault_path(world_id, world_slug)
-    facets = facets_for_template(template_id)
+    facets = effective_facets(world or {}, template_id)
+    registry_docs = list_documents(world_id)
+    docs_by_facet = documents_by_facet(world_id, facets)
     domains_stats = {}
     for col in VAULT_COLLECTIONS:
         try:
@@ -272,11 +284,14 @@ def vault_structure(world_id: str, world_slug: str, template_id: str) -> dict:
                         "path": str(p),
                         "relative": str(p.relative_to(base)).replace("\\", "/"),
                     })
+        fid = facet.get("id") or facet.get("folder")
+        reg = docs_by_facet.get(fid) or []
         folders.append({
             **facet,
             "domain_label": DOMAIN_LABELS.get(facet["domain"], facet["domain"]),
-            "file_count": len(files),
+            "file_count": len(files) + len(reg),
             "files": files[:20],
+            "documents": reg,
             "exists": folder.is_dir(),
         })
 
@@ -295,6 +310,8 @@ def vault_structure(world_id: str, world_slug: str, template_id: str) -> dict:
         "repo_path": repo_path,
         "facets": folders,
         "domain_counts": domains_stats,
+        "document_count": len(registry_docs),
+        "storage_backend": _storage_backend_label(),
     }
 
 

@@ -10,10 +10,10 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Plus+Jakarta+Sans:wght@600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/static/tokens.css?v=3">
-  <link rel="stylesheet" href="/static/components.css?v=3">
-  <link rel="stylesheet" href="/static/app.css?v=3">
-  <link rel="stylesheet" href="/static/mobile.css?v=3">
+  <link rel="stylesheet" href="/static/tokens.css?v=9">
+  <link rel="stylesheet" href="/static/components.css?v=9">
+  <link rel="stylesheet" href="/static/app.css?v=9">
+  <link rel="stylesheet" href="/static/mobile.css?v=9">
 </head>
 <body>
   <a class="skip-link" href="#main-content">Skip to content</a>
@@ -34,8 +34,8 @@
       </div>
       <nav class="nav" id="nav">
         <p class="nav-section-label">Overview</p>
-        <button type="button" data-view="dashboard" class="nav-link is-active"><span class="nav-link__body"><span>Command</span></span></button>
-        <button type="button" data-view="chat" class="nav-link"><span class="nav-link__body"><span>Chat</span></span></button>
+        <button type="button" data-view="dashboard" class="nav-link is-active"><span class="nav-link__body"><span>Control</span></span></button>
+        <button type="button" data-view="chat" class="nav-link"><span class="nav-link__body"><span>Ask agent</span></span></button>
         <button type="button" data-view="agents" class="nav-link"><span class="nav-link__body"><span>Agents</span></span></button>
         <p class="nav-section-label">Workspace</p>
         <button type="button" data-view="world" class="nav-link"><span class="nav-link__body"><span>Worlds</span></span></button>
@@ -62,7 +62,7 @@
           <span class="topbar-menu-btn__bar" aria-hidden="true"></span>
         </button>
         <div class="topbar-lead">
-          <h1 class="display-md" id="view-title">Command center</h1>
+          <h1 class="display-md" id="view-title">Control center</h1>
           <div class="live-strip" id="live-strip" hidden>
             <span class="live-pulse" aria-hidden="true"></span>
             <span class="live-strip-text" id="live-strip-text">Agent working…</span>
@@ -82,19 +82,19 @@
       </header>
 
       <main class="content" id="main-content">
-        <div id="content"></div>
+        <div id="content"><p class="body-md muted">Loading dashboard…</p></div>
       </main>
     </div>
   </div>
 
   <nav class="mobile-tabbar" id="mobile-tabbar" aria-label="Mobile navigation">
-    <button type="button" class="mobile-tab is-active" data-mobile-view="dashboard" aria-label="Command">
+    <button type="button" class="mobile-tab is-active" data-mobile-view="dashboard" aria-label="Control">
       <span class="mobile-tab__icon" data-icon="dashboard"></span>
-      <span class="mobile-tab__label">Command</span>
+      <span class="mobile-tab__label">Control</span>
     </button>
-    <button type="button" class="mobile-tab" data-mobile-view="chat" aria-label="Chat">
+    <button type="button" class="mobile-tab" data-mobile-view="chat" aria-label="Ask agent">
       <span class="mobile-tab__icon" data-icon="chat"></span>
-      <span class="mobile-tab__label">Chat</span>
+      <span class="mobile-tab__label">Agent</span>
     </button>
     <button type="button" class="mobile-tab" data-mobile-view="agents" aria-label="Agents">
       <span class="mobile-tab__icon" data-icon="agents"></span>
@@ -163,8 +163,8 @@
   </dialog>
 
   <!-- Core UI first — must not depend on CDN (blocked CDN was preventing app.js from ever running) -->
-  <script src="/static/charts.js?v=3"></script>
-  <script src="/static/nav-icons.js?v=3"></script>
+  <script src="/static/charts.js?v=9"></script>
+  <script src="/static/nav-icons.js?v=9"></script>
   <script>
     (function () {
       function setStatus(msg, ok) {
@@ -191,13 +191,13 @@
         });
     })();
   </script>
-  <script src="/static/app.js?v=3"></script>
+  <script src="/static/app.js?v=9"></script>
   <!-- Optional enhancements (graphs + motion) — deferred so boot is never blocked -->
   <script defer src="https://cdn.jsdelivr.net/npm/gsap@3.12.7/dist/gsap.min.js"></script>
   <script defer src="https://cdn.jsdelivr.net/npm/gsap@3.12.7/dist/ScrollTrigger.min.js"></script>
   <script defer src="https://cdn.jsdelivr.net/npm/cytoscape@3.30.2/dist/cytoscape.min.js"></script>
-  <script defer src="/static/graph-viz.js?v=3"></script>
-  <script defer src="/static/motion.js?v=3"></script>
-  <script defer src="/static/enhance.js?v=3"></script>
+  <script defer src="/static/graph-viz.js?v=9"></script>
+  <script defer src="/static/motion.js?v=9"></script>
+  <script defer src="/static/enhance.js?v=9"></script>
 </body>
 </html>

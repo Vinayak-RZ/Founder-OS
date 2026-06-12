@@ -320,7 +320,12 @@
 
   /* ── Mobile menu sheet ────────────────────────────────────────────────── */
 
-  .mobile-menu-drawer {
+  /* Only show when <dialog open> — never force display:block on closed dialogs */
+  .mobile-menu-drawer:not([open]) {
+    display: none;
+  }
+
+  .mobile-menu-drawer[open] {
     display: block;
     position: fixed;
     inset: auto 0 0 0;
@@ -617,7 +622,7 @@
   .content.content--chat {
     display: flex;
     flex-direction: column;
-    padding-bottom: 0;
+    padding-bottom: var(--mobile-shell-pad);
     min-height: calc(100dvh - 56px - var(--mobile-shell-pad) - var(--safe-top));
   }
 
@@ -665,10 +670,10 @@
 
   .chat-composer {
     position: sticky;
-    bottom: 0;
+    bottom: var(--mobile-shell-pad);
     z-index: 2;
     margin-top: auto;
-    padding-bottom: calc(var(--space-xs) + var(--safe-bottom));
+    padding-bottom: var(--space-xs);
     background: var(--color-canvas);
     border-top: 1px solid var(--color-outline-variant);
     box-shadow: 0 -8px 24px color-mix(in srgb, var(--color-secondary) 6%, transparent);
