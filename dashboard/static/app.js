@@ -153,28 +153,162 @@ function renderChatSessionsList() {
   </section>`;
 }
 
-let mdEditorState = { artifactId: null, editMode: false };
-
 async function openMdEditor(artifactId) {
-  const dlg = document.getElementById("md-editor-dialog");
-  if (!dlg) return;
+  openDocumentsWorkspace(artifactId);
+}
+
+function openDocumentsWorkspace(artifactId) {
+  if (artifactId != null) state._documentsSelectedId = Number(artifactId);
+  goView("documents");
+}
+
+function renderWorldOptionsForDocs(selectedWorldId) {
+  const tree = state.worlds || state._worldFull?.worlds || {};
+  const root = tree.root;
+  const children = tree.children || [];
+  const sel = selectedWorldId || "";
+  let html = `<option value="root"${sel === "root" || !sel ? " selected" : ""}>${esc(root?.name || "Main world")}</option>`;
+  html += children.map(c =>
+    `<option value="${esc(c.id)}"${sel === c.id ? " selected" : ""}>${esc(c.name)} · ${esc(c.kind || "project")}</option>`
+  ).join("");
+  return html;
+}
+
+function renderDocuments() {
+  const artifacts = state._artifacts || [];
+  const selectedId = state._documentsSelectedId;
+  const selected = artifacts.find(a => a.id === selectedId);
+  const draft = state._documentDraft ?? "";
+  const editing = documentsEditMode;
+
+  const listItems = artifacts.length ? artifacts.map(a => `
+    <button type="button" class="docs-list-item${a.id === selectedId ? " is-active" : ""}" data-select-document="${a.id}">
+      <span class="badge-pill">${esc(a.kind || "md")}</span>
+      <span class="docs-list-item__title">${esc(a.title || "Untitled")}</span>
+      <span class="docs-list-item__meta muted">${fmtHistoryTime(a.created_at)}</span>
+    </button>`).join("") : "<p class='body-md muted'>No documents yet. Create one or upload a file.</p>";
+
+  let editorHtml = `<div class="docs-empty">
+    <p class="title-sm">Document workspace</p>
+    <p class="body-md muted">Select a document from the list, or create a new markdown file.</p>
+    <button type="button" class="button-primary button-sm" data-docs-action="new">+ New document</button>
+  </div>`;
+
+  if (selected) {
+    const preview = window.FOSMarkdown?.render?.(draft) || esc(draft);
+    editorHtml = `
+      <div class="docs-editor__toolbar">
+        <input type="text" class="text-input-on-dark docs-title-input" id="docs-title-input" value="${esc(selected.title || "Untitled")}" aria-label="Document title">
+        <select class="text-input-on-dark field-select docs-world-select" id="docs-world-select" aria-label="Project">
+          ${renderWorldOptionsForDocs(selected.world_id || "root")}
+        </select>
+        <button type="button" class="button-outline-on-dark button-sm" data-docs-action="toggle">${editing ? "Preview" : "Edit"}</button>
+        <button type="button" class="button-primary button-sm" data-docs-action="save">Save</button>
+        <button type="button" class="button-outline-on-dark button-sm" data-docs-action="memory">Save to memory</button>
+      </div>
+      <div class="docs-editor__body">
+        ${editing
+          ? `<textarea id="docs-source" class="docs-source text-input-on-dark" aria-label="Document source">${esc(draft)}</textarea>`
+          : `<div id="docs-preview" class="md-content docs-preview">${preview}</div>`}
+      </div>`;
+  }
+
+  return `
+    <header class="driver-card docs-header">
+      <div>
+        <p class="section-eyebrow">Markdown workspace</p>
+        <h2 class="title-md">Documents</h2>
+        <p class="body-md muted">View, edit, upload, and save agent-created files to memory or a project.</p>
+      </div>
+    </header>
+    <div class="docs-workspace">
+      <aside class="driver-card docs-list-panel">
+        <div class="docs-list-panel__head">
+          <button type="button" class="button-primary button-sm" data-docs-action="new">+ New</button>
+          <label class="button-outline-on-dark button-sm upload-label">Upload<input type="file" id="docs-upload" hidden accept=".md,.txt,.markdown,.pdf,.docx,.csv,.json"></label>
+        </div>
+        <div class="docs-list">${listItems}</div>
+      </aside>
+      <section class="driver-card docs-editor-panel">${editorHtml}</section>
+    </div>`;
+}
+
+async function createNewDocument() {
+  const title = prompt("Document title", "Untitled");
+  if (!title) return;
+  const wid = currentWorldId();
+  const res = await api("/artifacts", {
+    method: "POST",
+    body: JSON.stringify({
+      title,
+      content: `# ${title}\n\n`,
+      world_id: wid && wid !== "root" ? wid : null,
+    }),
+    timeoutMs: 15000,
+  });
+  state._documentsSelectedId = res.artifact?.id;
+  documentsEditMode = true;
+  await loadViewData("documents");
+  render();
+}
+
+async function uploadDocumentFile(file) {
+  if (!file) return;
+  const fd = new FormData();
+  fd.append("file", file);
+  const wid = currentWorldId();
+  if (wid && wid !== "root") fd.append("world_id", wid);
+  const res = await apiUpload("/artifacts", fd);
+  state._documentsSelectedId = res.artifact?.id;
+  documentsEditMode = false;
+  await loadViewData("documents");
+  render();
+}
+
+async function saveCurrentDocument() {
+  const id = state._documentsSelectedId;
+  if (!id) return;
+  const content = document.getElementById("docs-source")?.value ?? state._documentDraft ?? "";
+  const title = document.getElementById("docs-title-input")?.value ?? "Untitled";
+  const worldSel = document.getElementById("docs-world-select")?.value ?? "root";
+  await api(`/artifacts/${id}/content`, {
+    method: "PUT",
+    body: JSON.stringify({ content }),
+    timeoutMs: 15000,
+  });
+  await api(`/artifacts/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify({ title, world_id: worldSel === "root" ? null : worldSel }),
+    timeoutMs: 15000,
+  });
+  state._documentDraft = content;
+  documentsEditMode = false;
+  await loadViewData("documents");
+  render();
+}
+
+async function saveDocumentToMemory() {
+  const id = state._documentsSelectedId;
+  if (!id) return;
+  if (documentsEditMode) await saveCurrentDocument();
+  const res = await api(`/artifacts/${id}/memory`, { method: "POST", body: "{}", timeoutMs: 20000 });
+  alert(`Saved to memory (${res.collection || "documents"}).`);
+}
+
+async function selectDocument(artifactId) {
+  state._documentsSelectedId = Number(artifactId);
+  documentsEditMode = false;
   try {
     const data = await api(`/artifacts/${artifactId}/content`, { timeoutMs: 15000 });
-    mdEditorState = { artifactId, editMode: false };
-    $("#md-dialog-title").textContent = data.title || "Markdown";
-    $("#md-dialog-source").value = data.content || "";
-    const prev = $("#md-dialog-preview");
-    prev.innerHTML = window.FOSMarkdown?.render?.(data.content) || esc(data.content);
-    window.FOSMarkdown?.enhance?.(prev);
-    $("#md-dialog-source").hidden = true;
-    prev.hidden = false;
-    $("#md-dialog-save").hidden = true;
-    $("#md-dialog-mode").textContent = "Edit";
-    dlg.showModal();
+    state._documentDraft = data.content || "";
   } catch (e) {
-    alert(e.message || "Could not open file");
+    state._documentDraft = "";
+    alert(e.message || "Could not load document");
   }
+  render();
 }
+
+let mdEditorState = { artifactId: null, editMode: false };
 
 async function saveMdEditor() {
   if (!mdEditorState.artifactId) return;
@@ -314,6 +448,7 @@ async function cancelActiveJob(jobId) {
 let chatHistory = readJsonStorage("fos_chat", []);
 let historyTab = localStorage.getItem("fos_history_tab") || "conversations";
 if (historyTab === "artifacts") historyTab = "documents";
+let documentsEditMode = false;
 let livePollTimer = null;
 let memoryGraphTab = "graph";
 let worldGraphTab = "hierarchy";
@@ -368,6 +503,7 @@ const TITLES = {
   crm: "CRM & pipeline",
   goals: "Goals & tasks",
   memory: "Memory",
+  documents: "Documents",
   history: "History",
   tools: "Tools",
   activity: "Activity",
@@ -2574,7 +2710,7 @@ function renderHistory() {
         ${r.assistant_reply ? `<div class="history-run__reply msg-md">${window.FOSMarkdown?.render?.(r.assistant_reply) || esc(r.assistant_reply)}</div>` : ""}
       </article>`).join("") || "";
     const arts = (selected.artifacts || []).map(a => `
-      <button type="button" class="history-doc-btn" data-md-artifact="${a.id}">
+      <button type="button" class="history-doc-btn" data-open-document="${a.id}">
         <span class="badge-pill">${esc(a.kind)}</span>
         <span>${esc(a.title)}</span>
       </button>`).join("") || "<p class='muted'>No documents in this session.</p>";
@@ -2591,7 +2727,7 @@ function renderHistory() {
   }
 
   const documentsHtml = artifacts.length ? artifacts.map(a => `
-    <article class="history-doc-card" tabindex="0" data-md-artifact="${a.id}">
+    <article class="history-doc-card" tabindex="0" data-open-document="${a.id}">
       <div class="history-doc-card__head">
         <span class="badge-pill">${esc(a.kind)}</span>
         <span class="muted">${fmtHistoryTime(a.created_at)}</span>
@@ -2808,6 +2944,19 @@ async function loadViewData(view) {
       state._historySession = await api(`/history/sessions/${state._historySelectedId}`).catch(() => null);
     }
   }
+  if (view === "documents") {
+    state._artifacts = (await api("/artifacts?limit=100").catch(() => ({ artifacts: [] }))).artifacts || [];
+    if (state._documentsSelectedId) {
+      try {
+        const data = await api(`/artifacts/${state._documentsSelectedId}/content`, { timeoutMs: 15000 });
+        state._documentDraft = data.content || "";
+      } catch {
+        state._documentDraft = "";
+      }
+    } else {
+      state._documentDraft = "";
+    }
+  }
   if (view === "world") {
     state._worldFull = await api("/graph/world");
     state._worldGraph = state._worldFull?.graph ?? null;
@@ -2944,7 +3093,7 @@ function render(opts = {}) {
   const fns = {
     dashboard: renderDashboard, chat: renderChat, agents: renderAgents,
     world: renderWorld, approvals: renderApprovals, crm: renderCrm, goals: renderGoals,
-    memory: renderMemory, history: renderHistory, tools: renderTools, activity: renderActivity,
+    memory: renderMemory, history: renderHistory, documents: renderDocuments, tools: renderTools, activity: renderActivity,
     settings: renderSettings,
   };
   try {
@@ -2960,7 +3109,7 @@ function render(opts = {}) {
     return;
   }
   document.querySelector(".content")?.classList.toggle("content--worlds", currentView === "world");
-  document.querySelector(".content")?.classList.toggle("content--wide", ["agents", "world", "activity", "chat", "history"].includes(currentView));
+  document.querySelector(".content")?.classList.toggle("content--wide", ["agents", "world", "activity", "chat", "history", "documents"].includes(currentView));
   document.querySelector(".content")?.classList.toggle("content--chat", currentView === "chat");
   populateSpecialistSelect();
   const ragEl = $("#rag-mode-select");
@@ -2994,7 +3143,8 @@ function initContentDelegation() {
       + "[data-vault-cancel-doc],[data-vault-edit-doc],[data-vault-delete-doc],[data-vault-reload],"
       + "[data-github-add],[data-github-sync],[data-github-unlink],[data-goal-done],"
       + "[data-history-tab],[data-history-session],[data-open-chat-session],[data-new-chat-session],"
-      + "[data-chat-session],[data-cancel-job],[data-cancel-active-job],[data-md-artifact],"
+      + "[data-chat-session],[data-cancel-job],[data-cancel-active-job],[data-md-artifact],[data-open-document],"
+      + "[data-select-document],[data-docs-action],"
       + "#chat-send,#chat-clear,#memory-search,#toggle-pause,#agents-vault-search,"
       + "#delegate-selected-btn,#btn-logout,#btn-infra-refresh"
     );
@@ -3100,7 +3250,22 @@ function initContentDelegation() {
     }
     if (el.dataset.cancelJob) return cancelActiveJob(el.dataset.cancelJob);
     if (el.dataset.cancelActiveJob !== undefined) return cancelActiveJob();
-    if (el.dataset.mdArtifact) return openMdEditor(Number(el.dataset.mdArtifact));
+    if (el.dataset.openDocument) return openDocumentsWorkspace(Number(el.dataset.openDocument));
+    if (el.dataset.mdArtifact) return openDocumentsWorkspace(Number(el.dataset.mdArtifact));
+    if (el.dataset.selectDocument) return selectDocument(el.dataset.selectDocument);
+    if (el.dataset.docsAction) {
+      const action = el.dataset.docsAction;
+      if (action === "new") return createNewDocument().catch(e => alert(e.message));
+      if (action === "toggle") {
+        if (documentsEditMode) {
+          state._documentDraft = document.getElementById("docs-source")?.value ?? state._documentDraft;
+        }
+        documentsEditMode = !documentsEditMode;
+        return render();
+      }
+      if (action === "save") return saveCurrentDocument().catch(e => alert(e.message));
+      if (action === "memory") return saveDocumentToMemory().catch(e => alert(e.message));
+    }
   });
 
   root.addEventListener("submit", e => {
@@ -3123,6 +3288,12 @@ function initContentDelegation() {
 
   root.addEventListener("change", e => {
     if (e.target.id === "chat-file") return uploadFile(e);
+    if (e.target.id === "docs-upload") {
+      const f = e.target.files?.[0];
+      if (f) uploadDocumentFile(f).catch(err => alert(err.message));
+      e.target.value = "";
+      return;
+    }
     if (e.target.id === "specialist-select-agents") return selectSpecialist(e.target.value);
     if (e.target.id === "rag-mode-select") {
       state.ragMode = e.target.value || "auto";

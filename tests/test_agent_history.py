@@ -65,6 +65,19 @@ def test_session_messages_and_run(history_db):
     assert detail["runs"][0]["tools"][0]["name"] == "create_document"
 
 
+def test_create_manual_artifact(history_db, monkeypatch, tmp_path):
+    docs = tmp_path / "documents"
+    docs.mkdir()
+    monkeypatch.setattr(agent_history, "DOCS_DIR", str(docs))
+    art = agent_history.create_manual_artifact(title="Notes", content="# Notes\n", world_id="w1")
+    assert art["id"]
+    assert art["title"] == "Notes"
+    assert agent_history.read_artifact_text(art["id"]) == "# Notes\n"
+    updated = agent_history.update_artifact_meta(art["id"], title="Renamed", world_id="w2")
+    assert updated["title"] == "Renamed"
+    assert updated["world_id"] == "w2"
+
+
 def test_register_artifact_and_download_path(history_db, monkeypatch, tmp_path):
     docs = tmp_path / "documents"
     docs.mkdir()
@@ -107,3 +120,22 @@ def test_history_api(client, no_pin_config, history_db, monkeypatch):
     arts = client.get("/api/artifacts")
     assert arts.status_code == 200
     assert "artifacts" in arts.get_json()
+
+
+def test_create_artifact_api(client, no_pin_config, history_db, monkeypatch, tmp_path):
+    docs = tmp_path / "documents"
+    docs.mkdir()
+    monkeypatch.setattr(agent_history, "DOCS_DIR", str(docs))
+
+    r = client.post(
+        "/api/artifacts",
+        json={"title": "Strategy", "content": "# Strategy\n", "world_id": "w1"},
+    )
+    assert r.status_code == 201
+    body = r.get_json()
+    assert body["artifact"]["title"] == "Strategy"
+
+    aid = body["artifact"]["id"]
+    r2 = client.get(f"/api/artifacts/{aid}/content")
+    assert r2.status_code == 200
+    assert "# Strategy" in r2.get_json()["content"]

@@ -19,10 +19,6 @@
   display: none;
 }
 
-.sidebar-head {
-  display: contents;
-}
-
 @media (max-width: 900px) {
   html {
     -webkit-text-size-adjust: 100%;

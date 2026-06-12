@@ -355,6 +355,74 @@ def api_artifacts():
     return jsonify({"artifacts": items})
 
 
+@bp.route("/artifacts", methods=["POST"])
+def api_artifacts_create():
+    from memory import agent_history
+    world_id = (request.form.get("world_id") or "").strip() or None
+    if request.files and request.files.get("file"):
+        f = request.files["file"]
+        raw = f.read()
+        if not raw:
+            return jsonify({"error": "empty file"}), 400
+        art = _safe(
+            lambda: agent_history.create_artifact_from_upload(
+                filename=f.filename or "upload.md",
+                raw=raw,
+                world_id=world_id,
+            ),
+            None,
+        )
+    else:
+        data = request.get_json(silent=True) or {}
+        title = (data.get("title") or "Untitled").strip()
+        content = data.get("content") or ""
+        world_id = (data.get("world_id") or "").strip() or world_id
+        art = _safe(
+            lambda: agent_history.create_manual_artifact(
+                title=title,
+                content=content,
+                world_id=world_id,
+            ),
+            None,
+        )
+    if not art:
+        return jsonify({"error": "could not create document"}), 400
+    art["download_url"] = f"/api/artifacts/{art['id']}/file"
+    return jsonify({"artifact": art}), 201
+
+
+@bp.route("/artifacts/<int:artifact_id>", methods=["PATCH"])
+def api_artifact_update(artifact_id):
+    from memory import agent_history
+    data = request.get_json(silent=True) or {}
+    updated = _safe(
+        lambda: agent_history.update_artifact_meta(
+            artifact_id,
+            title=data.get("title"),
+            world_id=data.get("world_id"),
+        ),
+        None,
+    )
+    if not updated:
+        return jsonify({"error": "artifact not found"}), 404
+    updated["download_url"] = f"/api/artifacts/{artifact_id}/file"
+    return jsonify({"artifact": updated})
+
+
+@bp.route("/artifacts/<int:artifact_id>/memory", methods=["POST"])
+def api_artifact_memory(artifact_id):
+    from memory import agent_history
+    data = request.get_json(silent=True) or {}
+    collection = (data.get("collection") or "documents").strip()
+    result = _safe(
+        lambda: agent_history.save_artifact_to_memory(artifact_id, collection=collection),
+        {"ok": False, "error": "save failed"},
+    )
+    if not result.get("ok"):
+        return jsonify(result), 400
+    return jsonify(result)
+
+
 @bp.route("/artifacts/<int:artifact_id>")
 def api_artifact_detail(artifact_id):
     from memory import agent_history

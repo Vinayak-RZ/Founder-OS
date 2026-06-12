@@ -329,6 +329,119 @@ def write_artifact_text(artifact_id: int, content: str) -> bool:
         return False
 
 
+def _safe_filename(title: str) -> str:
+    base = "".join(c if c.isalnum() or c in "-_" else "_" for c in (title or "untitled")[:40])
+    return base.strip("_") or "untitled"
+
+
+def create_manual_artifact(
+    *,
+    title: str,
+    content: str = "",
+    world_id: str | None = None,
+    kind: str = "md",
+) -> dict:
+    """Create a user-authored markdown document on disk and register it."""
+    init_agent_history_db()
+    os.makedirs(DOCS_DIR, exist_ok=True)
+    fname = f"{_safe_filename(title)}_{_new_id()}.md"
+    path = os.path.join(DOCS_DIR, fname)
+    body = content if content.strip() else f"# {title or 'Untitled'}\n"
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(body)
+    return register_artifact(
+        kind=kind,
+        title=title or "Untitled",
+        path=path,
+        mime_type="text/markdown",
+        world_id=world_id,
+    )
+
+
+def create_artifact_from_upload(
+    *,
+    filename: str,
+    raw: bytes,
+    world_id: str | None = None,
+) -> dict:
+    """Save an uploaded file under data/documents/ and register it."""
+    init_agent_history_db()
+    os.makedirs(DOCS_DIR, exist_ok=True)
+    name = os.path.basename(filename or "upload.md")
+    stem, ext = os.path.splitext(name)
+    if not ext:
+        ext = ".md"
+        name = f"{name}.md"
+    safe = _safe_filename(stem)
+    path = os.path.join(DOCS_DIR, f"{safe}_{_new_id()}{ext}")
+    with open(path, "wb") as f:
+        f.write(raw)
+    kind = "md" if ext.lower() in (".md", ".markdown", ".txt") else ext.lstrip(".").lower() or "file"
+    mime = "text/markdown" if kind == "md" else None
+    return register_artifact(
+        kind=kind,
+        title=stem.replace("_", " ").title() or "Upload",
+        path=path,
+        mime_type=mime,
+        world_id=world_id,
+    )
+
+
+def update_artifact_meta(
+    artifact_id: int,
+    *,
+    title: str | None = None,
+    world_id: str | None = None,
+) -> dict | None:
+    art = get_artifact(artifact_id)
+    if not art:
+        return None
+    conn = get_conn()
+    if title is not None:
+        conn.execute(
+            "UPDATE agent_artifacts SET title = ? WHERE id = ?",
+            ((title or "Untitled")[:300], artifact_id),
+        )
+    if world_id is not None:
+        wid = (world_id or "").strip() or None
+        conn.execute(
+            "UPDATE agent_artifacts SET world_id = ? WHERE id = ?",
+            (wid, artifact_id),
+        )
+    conn.commit()
+    conn.close()
+    return get_artifact(artifact_id)
+
+
+def save_artifact_to_memory(artifact_id: int, collection: str = "documents") -> dict:
+    """Embed artifact text into a vector memory collection."""
+    text = read_artifact_text(artifact_id)
+    if not text or not text.strip():
+        return {"ok": False, "error": "no text content"}
+    art = get_artifact(artifact_id) or {}
+    from memory import vector_store
+
+    col = collection if collection in vector_store.COLLECTIONS else "documents"
+    source_key = f"artifact:{artifact_id}"
+    try:
+        vector_store.get_collection(col).delete(where={"source_key": source_key})
+    except Exception:
+        pass
+    vector_store.add(
+        col,
+        text[:12000],
+        metadata={
+            "source_key": source_key,
+            "artifact_id": str(artifact_id),
+            "title": art.get("title") or "",
+            "world_id": art.get("world_id") or "",
+            "source": "documents_workspace",
+        },
+        doc_id=source_key,
+    )
+    return {"ok": True, "collection": col, "artifact_id": artifact_id}
+
+
 def list_sessions(limit: int = 40, world_id: str | None = None) -> list[dict]:
     init_agent_history_db()
     conn = get_conn()
