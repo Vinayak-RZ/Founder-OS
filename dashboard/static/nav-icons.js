@@ -11,12 +11,19 @@ window.FOS_NAV_ICONS = {
   tools: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L4 17l3 3 6.3-5.3a4 4 0 0 0 5.4-5.4l-2.5 2.5-2.1-2.1 2.5-2.5z"/></svg>',
   activity: '<svg viewBox="0 0 24 24" aria-hidden="true"><polyline points="4 16 8 12 12 14 16 8 20 10"/><path d="M4 20h16"/></svg>',
   settings: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>',
+  more: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1.75" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.75" fill="currentColor" stroke="none"/><circle cx="19" cy="12" r="1.75" fill="currentColor" stroke="none"/></svg>',
 };
+
+const MOBILE_PRIMARY_VIEWS = new Set(["dashboard", "chat", "agents", "world"]);
+
+function iconHtml(key) {
+  return window.FOS_NAV_ICONS?.[key] || "";
+}
 
 function decorateNavIcons() {
   document.querySelectorAll(".nav-link[data-view]").forEach(btn => {
     const key = btn.dataset.view;
-    const svg = window.FOS_NAV_ICONS?.[key];
+    const svg = iconHtml(key);
     if (!svg) return;
     const body = btn.querySelector(".nav-link__body");
     if (!body || body.querySelector(".nav-icon")) return;
@@ -25,7 +32,14 @@ function decorateNavIcons() {
     icon.innerHTML = svg;
     body.prepend(icon);
   });
+
+  document.querySelectorAll("[data-icon]").forEach(el => {
+    const svg = iconHtml(el.dataset.icon);
+    if (svg) el.innerHTML = svg;
+  });
 }
+
+window.FOS_MOBILE_PRIMARY_VIEWS = MOBILE_PRIMARY_VIEWS;
 
 if (document.readyState === "loading") {
   document.addEventListener("DOMContentLoaded", decorateNavIcons);

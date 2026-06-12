@@ -2,7 +2,10 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#051f13">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <title>Founder OS — Stamped Energy</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -10,17 +13,24 @@
   <link rel="stylesheet" href="/static/tokens.css">
   <link rel="stylesheet" href="/static/components.css">
   <link rel="stylesheet" href="/static/app.css">
+  <link rel="stylesheet" href="/static/mobile.css">
 </head>
 <body>
   <a class="skip-link" href="#main-content">Skip to content</a>
+  <div class="sidebar-backdrop" id="sidebar-backdrop" hidden aria-hidden="true"></div>
   <div class="app">
-    <aside class="sidebar top-nav-on-dark" aria-label="Main navigation">
+    <aside class="sidebar top-nav-on-dark" id="sidebar" aria-label="Main navigation">
+      <div class="sidebar-head">
       <div class="brand">
         <div class="brand-mark" aria-hidden="true">SE</div>
         <div>
           <div class="brand-name">Founder OS</div>
           <div class="brand-sub caption" id="brand-sub">Stamped Energy</div>
         </div>
+      </div>
+      <button type="button" class="sidebar-close" id="sidebar-close" aria-label="Close navigation">
+        <span aria-hidden="true">×</span>
+      </button>
       </div>
       <nav class="nav" id="nav">
         <p class="nav-section-label">Overview</p>
@@ -46,6 +56,11 @@
 
     <div class="main">
       <header class="topbar">
+        <button type="button" class="topbar-menu-btn" id="btn-sidebar-open" aria-label="Open navigation" aria-controls="sidebar">
+          <span class="topbar-menu-btn__bar" aria-hidden="true"></span>
+          <span class="topbar-menu-btn__bar" aria-hidden="true"></span>
+          <span class="topbar-menu-btn__bar" aria-hidden="true"></span>
+        </button>
         <div class="topbar-lead">
           <h1 class="display-md" id="view-title">Command center</h1>
           <div class="live-strip" id="live-strip" hidden>
@@ -58,10 +73,11 @@
             <span class="caption-uppercase">World</span>
             <select id="world-select" class="world-select" aria-label="Active world context"></select>
           </label>
-          <button type="button" class="button-tertiary-text button-sm" id="btn-notifications" aria-label="Notifications">
-            Notifications <span class="badge-pill" id="notif-badge" hidden>0</span>
+          <button type="button" class="button-tertiary-text button-sm topbar-icon-btn" id="btn-notifications" aria-label="Notifications">
+            <span class="topbar-btn-label">Notifications</span>
+            <span class="badge-pill" id="notif-badge" hidden>0</span>
           </button>
-          <button type="button" class="button-outline-on-dark button-sm" id="btn-refresh">Refresh</button>
+          <button type="button" class="button-outline-on-dark button-sm topbar-refresh-btn" id="btn-refresh">Refresh</button>
         </div>
       </header>
 
@@ -70,6 +86,73 @@
       </main>
     </div>
   </div>
+
+  <nav class="mobile-tabbar" id="mobile-tabbar" aria-label="Mobile navigation">
+    <button type="button" class="mobile-tab is-active" data-mobile-view="dashboard" aria-label="Command">
+      <span class="mobile-tab__icon" data-icon="dashboard"></span>
+      <span class="mobile-tab__label">Command</span>
+    </button>
+    <button type="button" class="mobile-tab" data-mobile-view="chat" aria-label="Chat">
+      <span class="mobile-tab__icon" data-icon="chat"></span>
+      <span class="mobile-tab__label">Chat</span>
+    </button>
+    <button type="button" class="mobile-tab" data-mobile-view="agents" aria-label="Agents">
+      <span class="mobile-tab__icon" data-icon="agents"></span>
+      <span class="mobile-tab__label">Agents</span>
+    </button>
+    <button type="button" class="mobile-tab" data-mobile-view="world" aria-label="Worlds">
+      <span class="mobile-tab__icon" data-icon="world"></span>
+      <span class="mobile-tab__label">Worlds</span>
+    </button>
+    <button type="button" class="mobile-tab" data-mobile-view="more" aria-label="More" id="mobile-tab-more">
+      <span class="mobile-tab__icon" data-icon="more"></span>
+      <span class="mobile-tab__label">More</span>
+      <span class="mobile-tab__badge badge-pill badge-pill--alert" id="mobile-approval-badge" hidden>0</span>
+    </button>
+  </nav>
+
+  <dialog class="mobile-menu-drawer" id="mobile-menu-drawer" aria-labelledby="mobile-menu-title">
+    <div class="mobile-menu-drawer__grab" aria-hidden="true"></div>
+    <div class="mobile-menu-drawer__head">
+      <h2 class="title-md" id="mobile-menu-title">Menu</h2>
+      <button type="button" class="button-outline-on-dark button-sm" id="mobile-menu-close">Close</button>
+    </div>
+    <nav class="mobile-menu-nav" aria-label="Secondary navigation">
+      <button type="button" class="mobile-menu-link" data-view="approvals">
+        <span class="mobile-menu-link__icon" data-icon="approvals"></span>
+        <span>Approvals</span>
+        <span class="badge-pill badge-pill--alert mobile-menu-link__badge" id="mobile-menu-approval-badge" hidden>0</span>
+      </button>
+      <button type="button" class="mobile-menu-link" data-view="crm">
+        <span class="mobile-menu-link__icon" data-icon="crm"></span>
+        <span>CRM</span>
+      </button>
+      <button type="button" class="mobile-menu-link" data-view="goals">
+        <span class="mobile-menu-link__icon" data-icon="goals"></span>
+        <span>Goals</span>
+      </button>
+      <button type="button" class="mobile-menu-link" data-view="memory">
+        <span class="mobile-menu-link__icon" data-icon="memory"></span>
+        <span>Memory</span>
+      </button>
+      <button type="button" class="mobile-menu-link" data-view="tools">
+        <span class="mobile-menu-link__icon" data-icon="tools"></span>
+        <span>Tools</span>
+      </button>
+      <button type="button" class="mobile-menu-link" data-view="activity">
+        <span class="mobile-menu-link__icon" data-icon="activity"></span>
+        <span>Activity</span>
+      </button>
+      <button type="button" class="mobile-menu-link" data-view="settings">
+        <span class="mobile-menu-link__icon" data-icon="settings"></span>
+        <span>Settings</span>
+      </button>
+    </nav>
+    <div class="mobile-menu-foot caption-uppercase">
+      <span class="status-dot" id="mobile-status-dot" aria-hidden="true"></span>
+      <span id="mobile-status-text">Connecting…</span>
+    </div>
+  </dialog>
 
   <dialog class="drawer" id="notif-drawer" aria-labelledby="notif-title">
     <div class="drawer-head">

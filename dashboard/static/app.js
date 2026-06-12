@@ -1425,10 +1425,47 @@ async function loadViewData(view) {
   await loadGraphData();
 }
 
+const MOBILE_PRIMARY_VIEWS = window.FOS_MOBILE_PRIMARY_VIEWS || new Set(["dashboard", "chat", "agents", "world"]);
+
+function closeMobileShell() {
+  document.getElementById("sidebar")?.classList.remove("is-open");
+  document.body.classList.remove("mobile-nav-open");
+  const backdrop = document.getElementById("sidebar-backdrop");
+  if (backdrop) {
+    backdrop.classList.remove("is-visible");
+    backdrop.setAttribute("hidden", "");
+  }
+  document.getElementById("mobile-menu-drawer")?.close?.();
+}
+
+function openSidebar() {
+  const sidebar = document.getElementById("sidebar");
+  const backdrop = document.getElementById("sidebar-backdrop");
+  if (!sidebar || !backdrop) return;
+  sidebar.classList.add("is-open");
+  document.body.classList.add("mobile-nav-open");
+  backdrop.removeAttribute("hidden");
+  requestAnimationFrame(() => backdrop.classList.add("is-visible"));
+}
+
+function syncMobileNav(view) {
+  const primary = MOBILE_PRIMARY_VIEWS;
+  document.querySelectorAll(".mobile-tab").forEach(tab => {
+    const v = tab.dataset.mobileView;
+    if (v === "more") tab.classList.toggle("is-active", !primary.has(view));
+    else tab.classList.toggle("is-active", v === view);
+  });
+  document.querySelectorAll(".mobile-menu-link").forEach(btn => {
+    btn.classList.toggle("is-active", btn.dataset.view === view);
+  });
+}
+
 function goView(view) {
   currentView = view;
   $$(".nav button").forEach(b => b.classList.toggle("is-active", b.dataset.view === view));
   $("#view-title").textContent = TITLES[view] || view;
+  syncMobileNav(view);
+  closeMobileShell();
   FOSMotion?.animateTopbarTitle?.();
   if (["dashboard", "agents", "chat", "activity", "world"].includes(view)) startLivePoll();
   else stopLivePoll();
@@ -1465,6 +1502,7 @@ function render() {
   $("#content").innerHTML = (fns[currentView] || renderDashboard)();
   document.querySelector(".content")?.classList.toggle("content--worlds", currentView === "world");
   document.querySelector(".content")?.classList.toggle("content--wide", ["agents", "world", "activity", "chat"].includes(currentView));
+  document.querySelector(".content")?.classList.toggle("content--chat", currentView === "chat");
   populateSpecialistSelect();
   const ragEl = $("#rag-mode-select");
   if (ragEl) ragEl.value = state.ragMode || "auto";
@@ -1860,6 +1898,10 @@ function updateBadges() {
   const n = (state.approvals || []).length;
   const nb = $("#nav-approval-badge");
   if (nb) { nb.textContent = n; nb.hidden = !n; }
+  const mob = $("#mobile-approval-badge");
+  if (mob) { mob.textContent = n; mob.hidden = !n; }
+  const mobMenu = $("#mobile-menu-approval-badge");
+  if (mobMenu) { mobMenu.textContent = n; mobMenu.hidden = !n; }
   const unr = state.unread_notifications || 0;
   const nb2 = $("#notif-badge");
   if (nb2) { nb2.textContent = unr; nb2.hidden = !unr; }
@@ -1868,13 +1910,19 @@ function updateBadges() {
 function updateStatus() {
   const dot = $("#status-dot");
   const txt = $("#status-text");
+  const mobDot = $("#mobile-status-dot");
+  const mobTxt = $("#mobile-status-text");
   const c = state.config || {};
   if (c.agent_paused) {
     dot?.classList.add("paused"); dot?.classList.remove("ok");
+    mobDot?.classList.add("paused"); mobDot?.classList.remove("ok");
     if (txt) txt.textContent = "Agent paused";
+    if (mobTxt) mobTxt.textContent = "Agent paused";
   } else {
     dot?.classList.add("ok"); dot?.classList.remove("paused");
+    mobDot?.classList.add("ok"); mobDot?.classList.remove("paused");
     if (txt) txt.textContent = "Online";
+    if (mobTxt) mobTxt.textContent = "Online";
   }
   const sub = $("#brand-sub");
   if (sub) sub.textContent = c.my_name || c.company_name || "Founder OS";
@@ -1906,7 +1954,32 @@ function renderNotifications() {
 // ── Init ─────────────────────────────────────────────────────────────────────
 
 $$(".nav button").forEach(b => b.addEventListener("click", () => goView(b.dataset.view)));
+$("#btn-sidebar-open")?.addEventListener("click", openSidebar);
+$("#sidebar-close")?.addEventListener("click", closeMobileShell);
+$("#sidebar-backdrop")?.addEventListener("click", closeMobileShell);
+document.querySelectorAll(".mobile-tab").forEach(tab => {
+  tab.addEventListener("click", () => {
+    const v = tab.dataset.mobileView;
+    if (v === "more") {
+      syncMobileNav(currentView);
+      document.getElementById("mobile-menu-drawer")?.showModal();
+    } else {
+      goView(v);
+    }
+  });
+});
+document.querySelectorAll(".mobile-menu-link").forEach(b => {
+  b.addEventListener("click", () => goView(b.dataset.view));
+});
+const mobileMenuDrawer = $("#mobile-menu-drawer");
+$("#mobile-menu-close")?.addEventListener("click", () => mobileMenuDrawer?.close());
+mobileMenuDrawer?.addEventListener("click", (e) => {
+  if (e.target === mobileMenuDrawer) mobileMenuDrawer.close();
+});
 $("#btn-refresh")?.addEventListener("click", () => refresh().then(render));
+window.addEventListener("resize", () => {
+  if (window.innerWidth > 900) closeMobileShell();
+});
 const notifDialog = $("#notif-drawer");
 $("#btn-notifications")?.addEventListener("click", () => {
   renderNotifications();
@@ -1935,6 +2008,7 @@ refresh().then(async () => {
   state._world = await api("/world").catch(() => ({}));
   populateWorldSelect();
   populateSpecialistSelect();
+  syncMobileNav(currentView);
   await loadGraphData();
   render();
   startLivePoll();
