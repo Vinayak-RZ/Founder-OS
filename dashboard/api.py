@@ -619,7 +619,10 @@ def api_world_vault(world_id):
         lambda: knowledge_vault.vault_structure(world_id, w.get("slug") or world_id, tpl, world=w),
         {},
     )
-    return jsonify({"world": w, "vault": structure})
+    from dashboard import graph_viz
+
+    vault_graph = _safe(lambda: graph_viz.build_vault_graph(structure, world=w), {})
+    return jsonify({"world": w, "vault": structure, "vault_graph": vault_graph})
 
 
 @bp.route("/worlds/<world_id>/vault/documents")

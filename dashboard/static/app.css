@@ -572,7 +572,7 @@ body {
 .chat-wrap {
   display: flex;
   flex-direction: column;
-  min-height: calc(100vh - 220px);
+  min-height: min(70vh, 640px);
   max-width: none;
 }
 
@@ -909,7 +909,11 @@ td {
 }
 
 .chart-panel {
-  min-height: 180px;
+  min-height: 0;
+}
+
+.chart-panel:has(.chart-empty:not([hidden])) {
+  min-height: 0;
 }
 
 .chart-panel canvas {
@@ -922,8 +926,8 @@ td {
   display: flex;
   align-items: center;
   justify-content: center;
-  min-height: 120px;
-  padding: var(--space-sm);
+  min-height: 0;
+  padding: var(--space-md) var(--space-sm);
   text-align: center;
   font-size: var(--text-sm);
   line-height: 1.45;
@@ -1253,8 +1257,8 @@ td {
 
 .graph-canvas {
   width: 100%;
-  height: min(52vh, 480px);
-  min-height: 280px;
+  height: clamp(160px, 28vh, 360px);
+  min-height: 0;
   border: 1px solid color-mix(in srgb, var(--color-outline-variant) 70%, transparent);
   border-radius: var(--rounded-lg);
   background-color: var(--color-canvas-elevated);
@@ -1264,9 +1268,31 @@ td {
   background-size: 40px 40px;
 }
 
+.graph-canvas.is-empty {
+  display: none;
+}
+
 .graph-canvas--compact {
-  height: min(36vh, 320px);
-  min-height: 220px;
+  height: clamp(140px, 22vh, 280px);
+}
+
+.graph-canvas--vault {
+  height: clamp(160px, 26vh, 300px);
+}
+
+.graph-placeholder {
+  margin: 0;
+  padding: var(--space-md);
+  text-align: center;
+  border: 1px dashed var(--color-outline-variant);
+  border-radius: var(--rounded-lg);
+  background: var(--color-surface-low);
+}
+
+.graph-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xxs);
 }
 
 .graph-detail {
@@ -1473,7 +1499,7 @@ td {
   grid-template-columns: 1fr min(320px, 38%);
   gap: var(--space-md);
   align-items: start;
-  min-height: calc(100vh - 140px);
+  min-height: 0;
 }
 
 @media (max-width: 960px) {
@@ -2529,7 +2555,7 @@ td {
   grid-template-columns: minmax(220px, 260px) minmax(0, 1fr) minmax(300px, 380px);
   gap: var(--space-sm);
   align-items: start;
-  min-height: 560px;
+  min-height: 0;
 }
 
 .worlds-panel {
@@ -2698,8 +2724,8 @@ td {
 }
 
 .world-graph-canvas {
-  min-height: 420px;
-  height: 100%;
+  min-height: 0;
+  height: clamp(200px, 36vh, 380px);
   border-radius: 0;
   border-left: none;
   border-right: none;
@@ -3031,9 +3057,9 @@ td {
   flex-wrap: wrap;
 }
 
-/* Knowledge graph / vault documents */
-
-.knowledge-panel .vault-facet-tabs {
+.vault-inline-graph {
+  margin: var(--space-sm) 0;
+}
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-xxs);

@@ -147,7 +147,10 @@ def test_world_create_and_vault_when_authenticated(client, pin_config):
 
     vault = client.get(f"/api/worlds/{wid}/vault")
     assert vault.status_code == 200
-    assert vault.get_json()["world"]["id"] == wid
+    body = vault.get_json()
+    assert body["world"]["id"] == wid
+    assert "vault_graph" in body
+    assert body["vault_graph"]["nodes"]
 
     docs = client.get(f"/api/worlds/{wid}/vault/documents")
     assert docs.status_code == 200

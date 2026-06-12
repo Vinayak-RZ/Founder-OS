@@ -616,45 +616,189 @@ function renderAgentsTabPanel() {
   return "";
 }
 
-function selectedAgentMeta(agents) {
-  return routingMeta(agents);
+function renderGraphOrPlaceholder(containerId, graphData, opts = {}, emptyMessage = "Nothing to visualize yet.") {
+  if (!window.FOSGraph) return null;
+  const el = document.getElementById(containerId);
+  if (!el) return null;
+  let ph = el.parentElement?.querySelector(`[data-graph-placeholder-for="${containerId}"]`);
+  if (!ph) {
+    ph = document.createElement("p");
+    ph.className = "graph-placeholder body-md muted";
+    ph.dataset.graphPlaceholderFor = containerId;
+    el.insertAdjacentElement("afterend", ph);
+  }
+  const nodes = graphData?.nodes || [];
+  const edges = graphData?.edges || [];
+  const onlyEmpty = nodes.length === 1 && nodes[0]?.data?.type === "empty";
+  const hasGraph = (nodes.length + edges.length) > 0 && !onlyEmpty;
+  const cy = hasGraph ? FOSGraph.render(containerId, graphData, opts) : null;
+  if (!cy) {
+    el.classList.add("is-empty");
+    ph.hidden = false;
+    ph.textContent = emptyMessage;
+  } else {
+    el.classList.remove("is-empty");
+    ph.hidden = true;
+  }
+  return cy;
+}
+
+function buildVaultGraph(vault, world) {
+  if (vault?.nodes && vault?.edges) return vault;
+  const v = vault?.vault || vault || {};
+  const w = world || {};
+  const nodes = [];
+  const edges = [];
+  const wid = w.id || v.world_id || "world";
+  const worldNid = `vault-world:${wid}`;
+  nodes.push({ data: { id: worldNid, label: (w.name || "World").slice(0, 36), type: "world_root", world_id: wid } });
+
+  const facets = v.facets || v.folders || [];
+  facets.forEach((facet) => {
+    const fid = facet.id || facet.folder || "slot";
+    const fnid = `vault-facet:${wid}:${fid}`;
+    const label = `${facet.label || facet.folder || "Folder"} (${facet.file_count || 0})`;
+    nodes.push({ data: { id: fnid, label: label.slice(0, 40), type: "vault_facet", facet_id: fid, folder: facet.folder } });
+    edges.push({ data: { source: worldNid, target: fnid, label: "folder" } });
+    (facet.documents || []).slice(0, 14).forEach((doc, i) => {
+      const did = `vault-doc:${doc.id || i}`;
+      nodes.push({
+        data: {
+          id: did,
+          label: (doc.title || doc.filename || "Document").slice(0, 36),
+          type: "vault_file",
+          doc_id: doc.id,
+          facet_id: fid,
+          source: doc.source_type || "upload",
+        },
+      });
+      edges.push({ data: { source: fnid, target: did, label: "doc" } });
+    });
+    (facet.files || []).slice(0, 8).forEach((file, i) => {
+      const dnid = `vault-disk:${wid}:${fid}:${i}`;
+      nodes.push({
+        data: {
+          id: dnid,
+          label: (file.name || file.relative || "file").slice(0, 32),
+          type: "vault_file",
+          path: file.relative,
+          facet_id: fid,
+          source: "disk",
+        },
+      });
+      edges.push({ data: { source: fnid, target: dnid, label: "disk" } });
+    });
+  });
+  (v.github_repos || []).slice(0, 10).forEach((repo) => {
+    const rid = `gh-repo:${repo.id}`;
+    nodes.push({
+      data: {
+        id: rid,
+        label: (repo.full_name || "repo").split("/").pop().slice(0, 28),
+        type: "vault_repo",
+        link_id: repo.id,
+        repo: repo.full_name,
+      },
+    });
+    edges.push({ data: { source: worldNid, target: rid, label: "github" } });
+  });
+  if (nodes.length <= 1) {
+    nodes.push({ data: { id: "vault-empty", label: "Add docs or link GitHub", type: "empty" } });
+    edges.push({ data: { source: worldNid, target: "vault-empty", label: "start" } });
+  }
+  return { nodes, edges };
+}
+
+function vaultGraphForWorld(world) {
+  const vault = state._worldVault?.vault || state._worldVault || {};
+  if (state._vaultGraph?.nodes?.length) return state._vaultGraph;
+  return buildVaultGraph(vault, world);
 }
 
 function drawGraphs() {
   if (!window.FOSGraph) return;
   if (currentView === "dashboard" && state._runtimeGraph) {
-    FOSGraph.render("graph-runtime-dash", state._runtimeGraph, { layout: { name: "breadthfirst", directed: true, padding: 20 } });
+    renderGraphOrPlaceholder(
+      "graph-runtime-dash",
+      state._runtimeGraph,
+      { layout: { name: "breadthfirst", directed: true, padding: 20 } },
+      "Runtime graph appears when an agent is active.",
+    );
   }
   if (currentView === "agents" && state._runtimeGraph) {
     const el = state.agentsTab === "live" ? "graph-runtime-agents-tab" : "graph-runtime-agents";
     if (document.getElementById(el)) {
-      FOSGraph.render(el, state._runtimeGraph);
+      renderGraphOrPlaceholder(el, state._runtimeGraph, {}, "Runtime graph appears when an agent is active.");
     }
   }
   if (currentView === "chat" && state._runtimeGraph && document.getElementById("graph-runtime-chat")) {
-    FOSGraph.render("graph-runtime-chat", state._runtimeGraph, { layout: { name: "breadthfirst", directed: true, padding: 16 } });
+    renderGraphOrPlaceholder(
+      "graph-runtime-chat",
+      state._runtimeGraph,
+      { layout: { name: "breadthfirst", directed: true, padding: 16 } },
+      "Runtime graph appears when an agent is active.",
+    );
   }
   if (currentView === "world") {
-    const graph = worldGraphTab === "ecosystem"
-      ? state._worldGraph
-      : (state._worldHierarchyGraph || state._worldGraph);
-    if (graph) {
-      FOSGraph.render("graph-world", graph, {
-        layout: worldGraphTab === "hierarchy" ? FOSGraph.HIERARCHY_LAYOUT : FOSGraph.LAYOUT,
-        onSelect: (d) => {
-          if (d.world_id) selectInspectorWorld(d.world_id);
+    const selected = worldById(inspectorWorldId());
+    if (worldGraphTab === "vault" && !isRootWorld(selected)) {
+      renderGraphOrPlaceholder(
+        "graph-world",
+        vaultGraphForWorld(selected),
+        {
+          layout: FOSGraph.HIERARCHY_LAYOUT,
+          onSelect: (d) => {
+            if (d.facet_id) {
+              state.ui = { ...(state.ui || {}), vaultFacet: d.facet_id };
+              render();
+              drawGraphs();
+            }
+          },
         },
-      });
-      window.FOSGraph?.highlightWorld("graph-world", inspectorWorldId(), currentWorldId());
+        "No files yet — add documents or link a GitHub repo in the knowledge panel below.",
+      );
+    } else {
+      const graph = worldGraphTab === "ecosystem"
+        ? state._worldGraph
+        : (state._worldHierarchyGraph || state._worldGraph);
+      if (graph) {
+        renderGraphOrPlaceholder(
+          "graph-world",
+          graph,
+          {
+            layout: worldGraphTab === "hierarchy" ? FOSGraph.HIERARCHY_LAYOUT : FOSGraph.LAYOUT,
+            onSelect: (d) => {
+              if (d.world_id) selectInspectorWorld(d.world_id);
+            },
+          },
+          "World map will appear once your hierarchy is loaded.",
+        );
+        window.FOSGraph?.highlightWorld("graph-world", inspectorWorldId(), currentWorldId());
+      } else {
+        renderGraphOrPlaceholder("graph-world", null, {}, "World map will appear once your hierarchy is loaded.");
+      }
+    }
+    if (document.getElementById("graph-vault-inline")) {
+      renderGraphOrPlaceholder(
+        "graph-vault-inline",
+        vaultGraphForWorld(selected),
+        { layout: FOSGraph.HIERARCHY_LAYOUT },
+        "Add documents or link GitHub to see your file map.",
+      );
     }
   }
   if (currentView === "memory" && state._memoryGraph) {
-    FOSGraph.render("graph-memory", state._memoryGraph, {
-      onSelect: (d) => {
-        const el = $("#graph-memory-detail");
-        if (el) el.textContent = `${d.type}: ${d.label}`;
+    renderGraphOrPlaceholder(
+      "graph-memory",
+      state._memoryGraph,
+      {
+        onSelect: (d) => {
+          const el = $("#graph-memory-detail");
+          if (el) el.textContent = `${d.type}: ${d.label}`;
+        },
       },
-    });
+      "Memory graph fills in as you store knowledge and run agents.",
+    );
   }
 }
 
@@ -1126,13 +1270,16 @@ function inspectorWorldId() {
 async function loadWorldVault(worldId) {
   if (!worldId || worldId === "root") {
     state._worldVault = null;
+    state._vaultGraph = null;
     return;
   }
   try {
     const res = await api(`/worlds/${encodeURIComponent(worldId)}/vault`);
     state._worldVault = res.vault || null;
+    state._vaultGraph = res.vault_graph || null;
   } catch (_) {
     state._worldVault = null;
+    state._vaultGraph = null;
   }
 }
 
@@ -1142,6 +1289,7 @@ function selectInspectorWorld(id) {
     state._motionSkipOnce = true;
     loadWorldVault(id).then(() => {
       render();
+      drawGraphs();
       FOSMotion?.flashElement?.($("#world-inspector"));
       window.FOSGraph?.highlightWorld("graph-world", inspectorWorldId(), currentWorldId());
     });
@@ -1404,7 +1552,7 @@ function renderGithubReposPanel(w, vault) {
 function renderWorldVaultPanel(w) {
   if (!w || w.id === "root") return "";
   const vault = state._worldVault?.vault || state._worldVault || {};
-  const facets = vault.facets || [];
+  const facets = vault.facets || vault.folders || [];
   const counts = vault.domain_counts || {};
   const activeFacet = state.ui?.vaultFacet || facets[0]?.id || facets[0]?.folder || null;
   const showForm = state.ui?.vaultDocForm || state.ui?.vaultDocEdit;
@@ -1440,17 +1588,22 @@ function renderWorldVaultPanel(w) {
         <div>
           <p class="section-eyebrow">Knowledge graph</p>
           <h3 class="title-sm">${esc(w.name)} — ${esc(vault.template_id || w.template || "startup")} template</h3>
-          <p class="body-md muted">Category slots for this world type. Add docs with a searchable description; large files live in ${esc(vaultStorageLabel())}.</p>
+          <p class="body-md muted">Category slots for this world type. Add docs with a searchable description; large files live in ${esc(vaultStorageLabel())}. Use the <strong>Files</strong> tab in the map above for the full folder graph.</p>
           <p class="world-meta">${vault.document_count || 0} registered docs · ${esc(vault.vault_path || "")}${vault.repo_path ? ` · repo: ${esc(vault.repo_path)}` : ""}</p>
         </div>
         <div class="vault-panel-actions">
           <button type="button" class="button-primary button-sm" data-vault-add-doc="${esc(w.id)}">Add document</button>
+          <button type="button" class="button-outline-on-dark button-sm" data-world-graph-tab="vault">Open file map</button>
           <input class="text-input-on-dark" id="vault-repo-path" placeholder="Local repo path" value="${esc(w.repo_path || "")}">
           <button type="button" class="button-outline-on-dark button-sm" data-vault-link="${esc(w.id)}">Link repo</button>
           <button type="button" class="button-outline-on-dark button-sm" data-vault-ingest="${esc(w.id)}">Re-ingest</button>
         </div>
       </div>
       ${renderGithubReposPanel(w, vault)}
+      <div class="vault-inline-graph graph-wrap">
+        <p class="caption-uppercase">File &amp; folder map</p>
+        <div id="graph-vault-inline" class="graph-canvas graph-canvas--vault" role="img" aria-label="Vault file map"></div>
+      </div>
       <div class="vault-facet-tabs" role="tablist">${facetTabs || "<span class='muted'>No categories</span>"}</div>
       ${showForm ? renderVaultDocForm(w, facets, activeFacet) : ""}
       <div class="vault-doc-grid">${docRows || "<p class='body-md muted'>No documents in this slot yet — add your ICP, GTM notes, research, etc.</p>"}</div>
@@ -1488,6 +1641,8 @@ function renderWorld() {
   const selected = worldById(inspectId) || root;
   const snap = w.snapshot || state.snapshot || {};
   const founder = state.config?.my_name || "You";
+  if (isRootWorld(selected) && worldGraphTab === "vault") worldGraphTab = "hierarchy";
+  const showVaultGraphTab = !isRootWorld(selected);
 
   return `
     <div class="worlds-page">
@@ -1526,15 +1681,23 @@ function renderWorld() {
             <div class="world-graph-tabs" role="tablist">
               <button type="button" class="world-graph-tab${worldGraphTab === "hierarchy" ? " is-active" : ""}" data-world-graph-tab="hierarchy">Hierarchy</button>
               <button type="button" class="world-graph-tab${worldGraphTab === "ecosystem" ? " is-active" : ""}" data-world-graph-tab="ecosystem">Ecosystem</button>
+              ${showVaultGraphTab ? `<button type="button" class="world-graph-tab${worldGraphTab === "vault" ? " is-active" : ""}" data-world-graph-tab="vault">Files</button>` : ""}
             </div>
           </div>
           <div id="graph-world" class="graph-canvas world-graph-canvas" role="img" aria-label="World graph"></div>
           <div class="world-graph-legend">
+            ${worldGraphTab === "vault" ? `
+            <span><i style="border-color:#051f13"></i> World</span>
+            <span><i style="border-color:#00666b"></i> Folder</span>
+            <span><i style="border-color:#8f706b;border-radius:50%"></i> File</span>
+            <span><i style="border-color:#f75440;background:#2d312e"></i> GitHub</span>
+            ` : `
             <span><i style="border-color:#051f13"></i> Main</span>
             <span><i style="border-color:#f75440"></i> Project</span>
             <span><i style="border-color:#ffb4a8"></i> Idea</span>
             <span><i style="border-color:#00666b"></i> Research</span>
             <span><i style="border-color:#f75440;background:#f7544033"></i> Active</span>
+            `}
           </div>
         </section>
 
@@ -2033,9 +2196,12 @@ async function loadViewData(view) {
     state._tools = tools;
     const wid = currentWorldId();
     if (wid && wid !== "root") {
-      state._worldVault = await api(`/worlds/${encodeURIComponent(wid)}/vault`).catch(() => ({}));
+      const res = await api(`/worlds/${encodeURIComponent(wid)}/vault`).catch(() => ({}));
+      state._worldVault = res.vault || null;
+      state._vaultGraph = res.vault_graph || null;
     } else {
-      state._worldVault = {};
+      state._worldVault = null;
+      state._vaultGraph = null;
     }
   }
   if (view === "settings") {

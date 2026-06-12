@@ -37,3 +37,30 @@ def test_hierarchy_graph_structure():
     assert "founder" in types
     world_ids = {n["data"].get("world_id") for n in g["nodes"] if n["data"].get("world_id")}
     assert worlds.ROOT_ID in world_ids
+
+
+def test_vault_graph_includes_folders_and_repos():
+    from dashboard import graph_viz
+
+    vault = {
+        "world_id": "demo",
+        "facets": [
+            {
+                "id": "gtm",
+                "label": "GTM",
+                "folder": "gtm",
+                "file_count": 2,
+                "documents": [{"id": 1, "title": "ICP", "filename": "icp.md"}],
+                "files": [{"name": "notes.txt", "relative": "gtm/notes.txt"}],
+            }
+        ],
+        "github_repos": [{"id": 9, "full_name": "org/app"}],
+        "document_count": 1,
+    }
+    g = graph_viz.build_vault_graph(vault, world={"id": "demo", "name": "Demo"})
+    types = {n["data"]["type"] for n in g["nodes"]}
+    assert "world_root" in types
+    assert "vault_facet" in types
+    assert "vault_file" in types
+    assert "vault_repo" in types
+    assert g["meta"]["facet_count"] == 1

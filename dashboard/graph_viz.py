@@ -264,3 +264,65 @@ def build_memory_graph(kg: dict | None = None, collections: list | None = None) 
     if not nodes:
         nodes.append(_node("memory_empty", "No memory yet", "empty"))
     return {"nodes": nodes, "edges": edges, "meta": {"entity_count": len(kg.get("entities") or [])}}
+
+
+def build_vault_graph(vault: dict | None = None, world: dict | None = None) -> dict:
+    """World vault: world → facet folders → documents / disk files + GitHub repos."""
+    vault = vault or {}
+    world = world or {}
+    nodes = []
+    edges = []
+
+    wid = world.get("id") or vault.get("world_id") or "world"
+    wname = (world.get("name") or "World")[:36]
+    world_nid = _nid("vault_world", wid)
+    nodes.append(_node(world_nid, wname, "world_root", world_id=wid))
+
+    facets = vault.get("facets") or vault.get("folders") or []
+    doc_total = 0
+    for facet in facets:
+        fid = facet.get("id") or facet.get("folder") or "slot"
+        fnid = _nid("vault_facet", wid, fid)
+        label = (facet.get("label") or facet.get("folder") or "Folder")[:28]
+        count = facet.get("file_count") or 0
+        nodes.append(_node(fnid, f"{label} ({count})", "vault_facet", facet_id=fid, folder=facet.get("folder")))
+        edges.append(_edge(world_nid, fnid, "folder"))
+
+        for doc in (facet.get("documents") or [])[:14]:
+            doc_total += 1
+            did = _nid("vault_doc", str(doc.get("id", doc_total)))
+            title = (doc.get("title") or doc.get("filename") or "Document")[:36]
+            nodes.append(
+                _node(
+                    did,
+                    title,
+                    "vault_file",
+                    doc_id=doc.get("id"),
+                    facet_id=fid,
+                    source=doc.get("source_type") or "upload",
+                )
+            )
+            edges.append(_edge(fnid, did, "doc"))
+
+        for i, disk in enumerate((facet.get("files") or [])[:8]):
+            name = (disk.get("name") or disk.get("relative") or "file")[:32]
+            disk_nid = _nid("vault_disk", wid, fid, str(i))
+            nodes.append(_node(disk_nid, name, "vault_file", path=disk.get("relative"), facet_id=fid, source="disk"))
+            edges.append(_edge(fnid, disk_nid, "disk"))
+
+    for repo in (vault.get("github_repos") or [])[:10]:
+        rid = _nid("gh_repo", str(repo.get("id", "")))
+        short = (repo.get("full_name") or "repo").split("/")[-1][:28]
+        nodes.append(_node(rid, short, "vault_repo", link_id=repo.get("id"), repo=repo.get("full_name")))
+        edges.append(_edge(world_nid, rid, "github"))
+
+    meta = {
+        "document_count": vault.get("document_count") or doc_total,
+        "facet_count": len(facets),
+        "repo_count": len(vault.get("github_repos") or []),
+    }
+    if len(nodes) <= 1:
+        nodes.append(_node("vault_empty", "Add docs or link GitHub", "empty"))
+        edges.append(_edge(world_nid, "vault_empty", "start"))
+
+    return {"nodes": nodes, "edges": edges, "meta": meta}
