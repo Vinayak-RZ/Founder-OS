@@ -31,7 +31,7 @@ def path_exempt(path: str) -> bool:
         return True
     if path in ("/", "/favicon.ico"):
         return True
-    if path in ("/api/auth/status", "/api/auth/pin"):
+    if path in ("/api/auth/status", "/api/auth/pin", "/api/health", "/api/github/callback"):
         return True
     return False
 

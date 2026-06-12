@@ -34,8 +34,14 @@ def _configure_app(flask_app: Flask) -> None:
 
 
 _configure_app(app)
-app.register_blueprint(api_bp)
 register_auth_routes(api_bp)
+app.register_blueprint(api_bp)
+
+try:
+    from dashboard.startup_checks import run_startup_checks
+    run_startup_checks()
+except Exception:
+    pass
 
 
 @app.before_request

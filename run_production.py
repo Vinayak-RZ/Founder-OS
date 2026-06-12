@@ -7,8 +7,10 @@ import sys
 
 def main() -> None:
     from memory.paths import ensure_data_dirs
+    from dashboard.startup_checks import run_startup_checks
 
     ensure_data_dirs()
+    run_startup_checks()
 
     # Background scheduler (heartbeats, backups, reminders)
     from main import _start_scheduler_async

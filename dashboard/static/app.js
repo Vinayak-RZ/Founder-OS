@@ -1816,7 +1816,14 @@ function renderSettings() {
         <div class="spec-cell"><dt>Port</dt><dd class="small">${c.dashboard_port}</dd></div>
       </dl>
     </section>
-    <section class="driver-card span-12">
+    <section class="driver-card span-4">
+      <p class="caption-uppercase">Access</p>
+      <p class="body-md muted" style="margin-top:var(--space-sm)">Lock this dashboard on shared or production hosts with a 6-digit PIN (<code>DASHBOARD_PIN</code> in <code>.env</code>).</p>
+      <div class="human-form__actions" style="margin-top:var(--space-sm)">
+        <button type="button" class="button-outline-on-dark button-sm" id="btn-logout">Lock dashboard</button>
+      </div>
+    </section>
+    <section class="driver-card span-8">
       <p class="caption-uppercase">Integrations</p>
       <div class="integration-grid" style="margin-top:var(--space-sm)">
         ${integrationCard("Gmail", integ.gmail, "SMTP send + IMAP inbox via app password")}
@@ -2005,7 +2012,6 @@ function render() {
   populateSpecialistSelect();
   const ragEl = $("#rag-mode-select");
   if (ragEl) ragEl.value = state.ragMode || "auto";
-  bindViewEvents();
   afterRender();
   if (currentView === "chat") {
     const chatEl = $("#chat-messages");
@@ -2013,132 +2019,140 @@ function render() {
   }
 }
 
-function bindViewEvents() {
-  $("#chat-send")?.addEventListener("click", sendChat);
-  $("#chat-input")?.addEventListener("keydown", e => {
-    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendChat(); }
+/** Event delegation on #content — bound once so re-renders do not stack listeners. */
+function initContentDelegation() {
+  const root = document.getElementById("content");
+  if (!root || root.dataset.delegation === "1") return;
+  root.dataset.delegation = "1";
+
+  root.addEventListener("click", e => {
+    const el = e.target.closest(
+      "[data-operator],[data-toggle-ui],[data-goto],[data-approve],[data-reject],"
+      + "[data-select-specialist],[data-agents-tab],[data-toggle-run],[data-memory-tab],"
+      + "[data-inspect-world],[data-world-graph-tab],[data-use-world],[data-set-active-world],"
+      + "[data-edit-world],[data-cancel-edit],[data-delete-world],[data-vault-ingest],"
+      + "[data-vault-link],[data-vault-search],[data-vault-facet],[data-vault-add-doc],"
+      + "[data-vault-cancel-doc],[data-vault-edit-doc],[data-vault-delete-doc],"
+      + "[data-github-add],[data-github-sync],[data-github-unlink],[data-goal-done],"
+      + "#chat-send,#chat-clear,#memory-search,#toggle-pause,#agents-vault-search,"
+      + "#delegate-selected-btn,#btn-logout"
+    );
+    if (!el) return;
+    if (el.id === "chat-send") return sendChat();
+    if (el.id === "chat-clear") {
+      chatHistory = [];
+      localStorage.setItem("fos_chat", "[]");
+      return render();
+    }
+    if (el.id === "memory-search") return searchMemory();
+    if (el.id === "toggle-pause") return togglePause();
+    if (el.id === "agents-vault-search") return agentsVaultSearch();
+    if (el.id === "delegate-selected-btn") return delegateAgent();
+    if (el.id === "btn-logout") return logoutPin();
+    if (el.dataset.operator) return openOperatorAction(el.dataset.operator);
+    if (el.dataset.toggleUi) {
+      if (!state.ui) state.ui = {};
+      state.ui[el.dataset.toggleUi] = !state.ui[el.dataset.toggleUi];
+      return render();
+    }
+    if (el.dataset.goto) return goView(el.dataset.goto);
+    if (el.dataset.approve) return decideApproval(el.dataset.approve, true);
+    if (el.dataset.reject) return decideApproval(el.dataset.reject, false);
+    if (el.dataset.selectSpecialist !== undefined) return selectSpecialist(el.dataset.selectSpecialist || "");
+    if (el.dataset.agentsTab) {
+      state.agentsTab = el.dataset.agentsTab;
+      localStorage.setItem("fos_agents_tab", state.agentsTab);
+      render();
+      return drawGraphs();
+    }
+    if (el.dataset.toggleRun) {
+      const id = el.dataset.toggleRun;
+      state.expandedRunId = state.expandedRunId === id ? null : id;
+      return render();
+    }
+    if (el.dataset.memoryTab) { memoryGraphTab = el.dataset.memoryTab; return render(); }
+    if (el.dataset.inspectWorld) return selectInspectorWorld(el.dataset.inspectWorld);
+    if (el.dataset.worldGraphTab) { worldGraphTab = el.dataset.worldGraphTab; return render(); }
+    if (el.dataset.useWorld) { setActiveWorld(el.dataset.useWorld); return goView("chat"); }
+    if (el.dataset.setActiveWorld) { setActiveWorld(el.dataset.setActiveWorld); return render(); }
+    if (el.dataset.editWorld) { state.worldEditing = el.dataset.editWorld; return render(); }
+    if (el.dataset.cancelEdit !== undefined) { state.worldEditing = null; return render(); }
+    if (el.dataset.deleteWorld) return deleteWorld(el.dataset.deleteWorld);
+    if (el.dataset.vaultIngest) return vaultIngest(el.dataset.vaultIngest);
+    if (el.dataset.vaultLink) return vaultLinkRepo(el.dataset.vaultLink);
+    if (el.dataset.vaultSearch) return vaultSearch(el.dataset.vaultSearch);
+    if (el.dataset.vaultFacet) {
+      if (!state.ui) state.ui = {};
+      state.ui.vaultFacet = el.dataset.vaultFacet;
+      return render();
+    }
+    if (el.dataset.vaultAddDoc !== undefined) {
+      if (!state.ui) state.ui = {};
+      state.ui.vaultDocForm = true;
+      state.ui.vaultDocEdit = null;
+      return render();
+    }
+    if (el.dataset.vaultCancelDoc !== undefined) {
+      if (state.ui) { state.ui.vaultDocForm = false; state.ui.vaultDocEdit = null; }
+      return render();
+    }
+    if (el.dataset.vaultEditDoc) return startVaultDocEdit(inspectorWorldId(), el.dataset.vaultEditDoc);
+    if (el.dataset.vaultDeleteDoc) return deleteVaultDoc(inspectorWorldId(), el.dataset.vaultDeleteDoc);
+    if (el.dataset.githubAdd) return connectGithubRepo(el.dataset.githubAdd);
+    if (el.dataset.githubSync) return syncGithubRepo(el.dataset.worldId, el.dataset.githubSync);
+    if (el.dataset.githubUnlink) return unlinkGithubRepo(el.dataset.worldId, el.dataset.githubUnlink);
+    if (el.dataset.goalDone) return markGoalDone(el.dataset.goalDone);
   });
-  $("#chat-clear")?.addEventListener("click", () => {
-    chatHistory = [];
-    localStorage.setItem("fos_chat", "[]");
-    render();
+
+  root.addEventListener("submit", e => {
+    const form = e.target;
+    if (!(form instanceof HTMLFormElement)) return;
+    const handlers = {
+      "world-create-form": createWorldFromForm,
+      "crm-create-form": submitCrmContact,
+      "goal-create-form": submitGoal,
+      "reminder-create-form": submitReminder,
+      "agent-config-form": saveAgentConfig,
+      "world-edit-form": saveWorldEdit,
+      "vault-doc-form": submitVaultDoc,
+    };
+    if (handlers[form.id]) {
+      e.preventDefault();
+      handlers[form.id](form);
+    }
   });
-  $("#chat-file")?.addEventListener("change", uploadFile);
-  $$("[data-approve]").forEach(b => b.addEventListener("click", () => decideApproval(b.dataset.approve, true)));
-  $$("[data-reject]").forEach(b => b.addEventListener("click", () => decideApproval(b.dataset.reject, false)));
-  $("#memory-search")?.addEventListener("click", searchMemory);
-  $("#memory-q")?.addEventListener("keydown", e => { if (e.key === "Enter") searchMemory(); });
-  $("#toggle-pause")?.addEventListener("click", togglePause);
-  $$("[data-goto]").forEach(b => b.addEventListener("click", () => goView(b.dataset.goto)));
-  $$("[data-operator]").forEach(b => b.addEventListener("click", () => openOperatorAction(b.dataset.operator)));
-  $$("[data-toggle-ui]").forEach(b => b.addEventListener("click", () => {
-    const key = b.dataset.toggleUi;
-    if (!state.ui) state.ui = {};
-    state.ui[key] = !state.ui[key];
-    render();
-  }));
-  $$("[data-select-specialist]").forEach(b => b.addEventListener("click", () => selectSpecialist(b.dataset.selectSpecialist || "")));
-  $("#specialist-select-agents")?.addEventListener("change", e => selectSpecialist(e.target.value));
-  $("#rag-mode-select")?.addEventListener("change", e => {
-    state.ragMode = e.target.value || "auto";
-    localStorage.setItem("fos_rag_mode", state.ragMode);
+
+  root.addEventListener("change", e => {
+    if (e.target.id === "chat-file") return uploadFile(e);
+    if (e.target.id === "specialist-select-agents") return selectSpecialist(e.target.value);
+    if (e.target.id === "rag-mode-select") {
+      state.ragMode = e.target.value || "auto";
+      localStorage.setItem("fos_rag_mode", state.ragMode);
+      return;
+    }
+    if (e.target.matches("[data-crm-status]")) {
+      updateCrmStatus(e.target.dataset.crmStatus, e.target.value);
+    }
   });
-  $$("[data-agents-tab]").forEach(b => b.addEventListener("click", () => {
-    state.agentsTab = b.dataset.agentsTab;
-    localStorage.setItem("fos_agents_tab", state.agentsTab);
-    render();
-    drawGraphs();
-  }));
-  $$("[data-toggle-run]").forEach(b => b.addEventListener("click", () => {
-    const id = b.dataset.toggleRun;
-    state.expandedRunId = state.expandedRunId === id ? null : id;
-    render();
-  }));
-  $("#agents-vault-search")?.addEventListener("click", () => agentsVaultSearch());
-  $("#delegate-selected-btn")?.addEventListener("click", () => delegateAgent());
-  $("#delegate-selected")?.addEventListener("input", e => { state._delegateDraft = e.target.value; });
-  $$("[data-memory-tab]").forEach(b => b.addEventListener("click", () => {
-    memoryGraphTab = b.dataset.memoryTab;
-    render();
-  }));
-  $("#world-create-form")?.addEventListener("submit", e => {
-    e.preventDefault();
-    createWorldFromForm(e.target);
+
+  root.addEventListener("keydown", e => {
+    if (e.target.id === "chat-input" && e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      sendChat();
+    }
+    if (e.target.id === "memory-q" && e.key === "Enter") searchMemory();
   });
-  $("#crm-create-form")?.addEventListener("submit", e => {
-    e.preventDefault();
-    submitCrmContact(e.target);
+
+  root.addEventListener("input", e => {
+    if (e.target.id === "delegate-selected") state._delegateDraft = e.target.value;
   });
-  $("#goal-create-form")?.addEventListener("submit", e => {
-    e.preventDefault();
-    submitGoal(e.target);
-  });
-  $("#reminder-create-form")?.addEventListener("submit", e => {
-    e.preventDefault();
-    submitReminder(e.target);
-  });
-  $("#agent-config-form")?.addEventListener("submit", e => {
-    e.preventDefault();
-    saveAgentConfig(e.target);
-  });
-  $$("[data-goal-done]").forEach(b => b.addEventListener("click", () => markGoalDone(b.dataset.goalDone)));
-  $$("[data-crm-status]").forEach(sel => sel.addEventListener("change", () => {
-    updateCrmStatus(sel.dataset.crmStatus, sel.value);
-  }));
-  $("#world-edit-form")?.addEventListener("submit", e => {
-    e.preventDefault();
-    saveWorldEdit(e.target);
-  });
-  $$("[data-inspect-world]").forEach(b => b.addEventListener("click", () => selectInspectorWorld(b.dataset.inspectWorld)));
-  $$("[data-world-graph-tab]").forEach(b => b.addEventListener("click", () => {
-    worldGraphTab = b.dataset.worldGraphTab;
-    render();
-  }));
-  $$("[data-use-world]").forEach(b => b.addEventListener("click", () => {
-    setActiveWorld(b.dataset.useWorld);
-    goView("chat");
-  }));
-  $$("[data-set-active-world]").forEach(b => b.addEventListener("click", () => {
-    setActiveWorld(b.dataset.setActiveWorld);
-    render();
-  }));
-  $$("[data-edit-world]").forEach(b => b.addEventListener("click", () => {
-    state.worldEditing = b.dataset.editWorld;
-    render();
-  }));
-  $$("[data-cancel-edit]").forEach(b => b.addEventListener("click", () => {
-    state.worldEditing = null;
-    render();
-  }));
-  $$("[data-delete-world]").forEach(b => b.addEventListener("click", () => deleteWorld(b.dataset.deleteWorld)));
-  $$("[data-vault-ingest]").forEach(b => b.addEventListener("click", () => vaultIngest(b.dataset.vaultIngest)));
-  $$("[data-vault-link]").forEach(b => b.addEventListener("click", () => vaultLinkRepo(b.dataset.vaultLink)));
-  $$("[data-vault-search]").forEach(b => b.addEventListener("click", () => vaultSearch(b.dataset.vaultSearch)));
-  $("#vault-doc-form")?.addEventListener("submit", e => { e.preventDefault(); submitVaultDoc(e.target); });
-  $$("[data-vault-facet]").forEach(b => b.addEventListener("click", () => {
-    if (!state.ui) state.ui = {};
-    state.ui.vaultFacet = b.dataset.vaultFacet;
-    render();
-  }));
-  $$("[data-vault-add-doc]").forEach(b => b.addEventListener("click", () => {
-    if (!state.ui) state.ui = {};
-    state.ui.vaultDocForm = true;
-    state.ui.vaultDocEdit = null;
-    render();
-  }));
-  $$("[data-vault-cancel-doc]").forEach(b => b.addEventListener("click", () => {
-    if (state.ui) { state.ui.vaultDocForm = false; state.ui.vaultDocEdit = null; }
-    render();
-  }));
-  $$("[data-vault-edit-doc]").forEach(b => b.addEventListener("click", () => {
-    startVaultDocEdit(inspectorWorldId(), b.dataset.vaultEditDoc);
-  }));
-  $$("[data-vault-delete-doc]").forEach(b => b.addEventListener("click", () => {
-    deleteVaultDoc(inspectorWorldId(), b.dataset.vaultDeleteDoc);
-  }));
-  $$("[data-github-add]").forEach(b => b.addEventListener("click", () => connectGithubRepo(b.dataset.githubAdd)));
-  $$("[data-github-sync]").forEach(b => b.addEventListener("click", () => syncGithubRepo(b.dataset.worldId, b.dataset.githubSync)));
-  $$("[data-github-unlink]").forEach(b => b.addEventListener("click", () => unlinkGithubRepo(b.dataset.worldId, b.dataset.githubUnlink)));
+}
+
+async function logoutPin() {
+  try {
+    await api("/auth/logout", { method: "POST", body: "{}" });
+  } catch (_) { /* ignore */ }
+  showPinGate();
 }
 
 async function createWorldFromForm(form) {
@@ -2613,9 +2627,13 @@ async function uploadFile(e) {
   render();
   try {
     fd.append("world_id", currentWorldId());
-    const r = await fetch("/api/upload", { method: "POST", body: fd });
-    const res = await r.json();
-    if (!r.ok) throw new Error(res.error);
+    const r = await fetch("/api/upload", { method: "POST", body: fd, credentials: "same-origin" });
+    const res = await r.json().catch(() => ({}));
+    if (r.status === 401 && res.pin_required) {
+      showPinGate();
+      throw new Error("Enter your PIN to continue");
+    }
+    if (!r.ok) throw new Error(res.error || r.statusText);
     chatHistory.push({ role: "agent", text: res.reply });
   } catch (err) {
     chatHistory.push({ role: "system", text: "Upload failed: " + err.message });
@@ -2842,6 +2860,8 @@ async function fetchAuthStatus() {
 }
 
 function bindPinGate() {
+  if (window.__FOS_PIN_BOUND) return;
+  window.__FOS_PIN_BOUND = true;
   $("#pin-form")?.addEventListener("submit", async e => {
     e.preventDefault();
     const pin = ($("#pin-input")?.value || "").trim();
@@ -2912,6 +2932,7 @@ async function startApp() {
 }
 
 async function boot() {
+  initContentDelegation();
   bindPinGate();
   let auth = window.__FOS_AUTH;
   if (!auth) {

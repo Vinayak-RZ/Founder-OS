@@ -6,38 +6,41 @@
   extend it. It is intentionally exhaustive.
 -->
 
-# Founder OS — Personal Command Console & Aggregator Hub
+# Founder OS — Personal Operator Console & Aggregator Hub
 
-> A **personal, web-first platform** for running the many parallel threads of founder life —
-> Stamped Energy, side projects, research ideas, outreach, CRM, goals, and linked
-> documentation — in one place. **Deep work stays elsewhere** (Cursor, Claude, your repos);
-> Founder OS **coordinates**, **tracks**, **ingests** what you produce, and lets you **query**
-> it through a small specialist fleet and a per-project knowledge vault.
+> A **personal, web-first command console** for running parallel founder threads — companies,
+> side projects, research ideas, outreach, CRM, goals, and linked documentation — in one place.
+> **Deep work stays elsewhere** (Cursor, Claude, your repos); Founder OS **coordinates**,
+> **tracks**, **ingests**, and lets you **query** what you produce through worlds, a knowledge
+> vault, and a small specialist agent fleet.
 
-Founder OS is **not** a replacement for extensive research or coding sessions. It is an
-**aggregator and operator console**: you tell it what to track or draft, it pulls from your
-worlds and vault, manages outreach with approval gates, and surfaces status across everything
-you care about — without trying to go deep on any single domain.
+Founder OS is **not** a replacement for long research or coding sessions. It is an
+**aggregator and operator console**: you drive worlds, CRM, and goals directly in the UI;
+agents assist when you want them. Outreach stays approval-gated; status stays visible across
+everything you care about.
 
-**Primary interface:** the **web dashboard** (`http://127.0.0.1:8787` by default). Telegram
-is optional legacy (`TELEGRAM_ENABLED=false` by default).
+**Primary interface:** the **web dashboard** at `http://127.0.0.1:8787` (default). Mobile-ready
+SPA with a compact top bar and bottom navigation. Telegram is optional (`TELEGRAM_ENABLED=false`
+by default).
 
-**Deployment target:** personal AWS stack — **EC2** for the app process and **S3** for vault
-artifacts, backups, and static exports (see [Deployment](#56-deployment-aws-target)).
+**Production:** single-user **AWS** stack — **EC2** (Gunicorn), **S3** (vault payloads),
+**Qdrant Cloud** (vectors), **Cloudflare** (TLS/DNS), and an optional **6-digit PIN** gate
+(see [Deployment](#56-deployment-aws-target)).
 
 ---
 
 ## TL;DR — What makes this special
 
-- **Aggregator, not deep workstation** — parallel **worlds** (root + sub-worlds per startup/idea), each with template facets (company, leads, industry, product, clients). Link doc repos, ingest, query via **Vault** — don't run multi-hour research here.
-- **Web-native control plane** — chat with the supervisor, delegate to specialists, approve risky actions, explore worlds/vault/CRM/runway in one SPA. Integrations (GitHub, Gmail, Calendar, LinkedIn, X) are moving from `.env` setup to **in-app Connect** (roadmap).
-- **Outreach stays core** — draft and send email (approval-gated), CRM pipeline, lead coordination, inbox reply tracking.
-- **Five aggregator specialists** — Pulse (status), Outreach, Leads, Market intel, Vault — not a fleet of deep researchers.
-- **Knowledge vault** — local folder tree under `data/knowledge/` (or `KNOWLEDGE_VAULT_ROOT`), domain-scoped vector collections, `link_repo` + ingest from GitHub doc clones.
-- **Agentic core** (unchanged engine) — ReAct tool loop, Plan → Execute → Verify, Tool-RAG over **81 tools**, hybrid memory + GraphRAG, self-evolution behind approval.
-- **Safety-first** — constitution, injection defense, tiered autonomy, approval gate, spend caps, kill switch.
+- **Human-first control plane** — **Control center** with direct actions (new world, CRM, goals, reminders, agent policy, approvals). Chat is optional **Ask agent**, not the default workflow.
+- **Aggregator, not deep workstation** — parallel **worlds** (root + sub-worlds per startup/idea), template facets (company, leads, industry, product, clients). Link GitHub repos, ingest docs, query via **Vault** — don't run multi-hour research here.
+- **Knowledge vault** — per-world document CRUD, facet tabs, semantic search; payloads on **S3** (or local disk); descriptions indexed in Qdrant.
+- **GitHub OAuth** — connect GitHub in **Worlds**, link multiple repos per world, sync files to the vault.
+- **Five aggregator specialists** — Pulse, Outreach, Leads, Market intel, Vault — coordinate status and grounded Q&A; they don't replace Cursor for deep work.
+- **Outreach & CRM** — approval-gated email, pipeline, contacts, goals, reminders — operational core stays in-app.
+- **Agentic engine** — ReAct tool loop, Plan → Execute → Verify, Tool-RAG over **81 tools**, hybrid memory + GraphRAG, self-evolution behind approval.
+- **Safety-first** — constitution, injection defense, tiered autonomy, approval gate, spend caps, kill switch, optional **6-digit PIN** on the whole UI.
+- **Production-ready** — `run_production.py` (Gunicorn), `deploy/aws/` (systemd, nginx, IAM), `scripts/production_check.py`, `GET /api/health`.
 - **Observable** — per-turn tracing, cost tracking, eval harness, replay.
-- **Runs locally today; AWS tomorrow** — SQLite + Qdrant Cloud vectors; EC2 + S3 layout documented for single-user production.
 
 ---
 
@@ -72,7 +75,7 @@ life — not a generic chatbot and not a deep research IDE.
 | **Knowledge vault** | Per-world folder tree (`data/knowledge/<slug>/`) with template facets (company, leads, industry, product, clients, …). Link a local Git clone of your docs repo → ingest → query with the **Vault** specialist or vault search in the UI. |
 | **Aggregator agents** | Five specialists — **Pulse**, **Outreach**, **Leads**, **Market intel**, **Vault** — coordinate status, outreach, and grounded Q&A. They summarize and route; they do not replace hours-long research sessions. |
 | **Outreach & CRM** | Pipeline, drafts, approval-gated sends, inbox reply tracking — the operational core that stays in Founder OS. |
-| **Web UI** | Primary surface: chat, agent fleet, worlds map, vault explorer, approvals, CRM, runway, activity. |
+| **Web UI** | Primary surface: control center, worlds + vault, CRM, goals, agent fleet, approvals, memory, settings. Mobile-optimized shell. |
 
 ### What it is not
 
@@ -99,7 +102,7 @@ life — not a generic chatbot and not a deep research IDE.
 |---------|--------|----------------------------------------|
 | **Gmail** | `GMAIL_ADDRESS` + app password in `.env`; IMAP read + SMTP send | OAuth connect in dashboard |
 | **Google Calendar** | OAuth via `scripts/google_auth.py` + credentials JSON | One-click connect in dashboard |
-| **GitHub** | `github_repo` on world + local `repo_path` for vault ingest | GitHub App / OAuth to pick repos and auto-sync |
+| **GitHub** | OAuth in **Worlds** — link multiple repos per world, sync to S3/local vault | Deeper CI hooks, PR awareness |
 | **LinkedIn / X** | Draft tools; posting via API keys in `.env` | Activity feeds + connect in dashboard |
 
 ### Design principles
@@ -429,7 +432,7 @@ Web UI at http://127.0.0.1:8787
 Running in web-only mode. Open the Web UI in your browser.
 ```
 
-Open the URL in your browser. Use the top bar to pick a **world**, chat with **Pulse** or another specialist, and explore **Worlds** → vault panel to link your first docs repo.
+Open the URL in your browser. If `DASHBOARD_PIN` is set, enter your 6-digit PIN first. Use **Control** for direct actions, pick a **world** in the top bar, and open **Worlds** to connect GitHub or add vault documents. Use **Ask agent** when you want specialist help.
 
 ### 5.6 Deployment (AWS — EC2 + S3 + Qdrant Cloud)
 
@@ -451,8 +454,10 @@ Quick checklist:
 2. Launch Ubuntu EC2 with Elastic IP; security group: 22/80/443
 3. Clone repo to `/opt/founder-os`, run `sudo bash deploy/aws/bootstrap.sh`
 4. Copy `deploy/aws/env.production.example` → `/etc/founder-os/env` and fill in keys
-5. nginx + `certbot --nginx`; set `PUBLIC_BASE_URL` and `BEHIND_PROXY=true`
-6. `systemctl enable --now founder-os` — verify `curl https://your-domain/api/health`
+5. Set `DASHBOARD_PIN` (6 digits) + `FLASK_SECRET_KEY`; point Cloudflare A record at Elastic IP ([`deploy/aws/cloudflare.md`](deploy/aws/cloudflare.md))
+6. nginx + TLS; set `PUBLIC_BASE_URL` and `BEHIND_PROXY=true`
+7. `systemctl enable --now founder-os` — verify `curl https://your-domain/api/health`
+8. Pre-flight: `python scripts/production_check.py --url https://your-domain`
 
 Local development is unchanged: `python main.py` → `http://127.0.0.1:8787`.
 
@@ -552,6 +557,20 @@ All configuration is read in `config.py` into a typed `Config` dataclass.
 | `TOOL_RAG` | `true` | Tool-RAG: retrieve only the most relevant tools per user turn (+ a core set) instead of sending the whole catalog. Falls back to all tools on any failure. |
 | `TOOL_RAG_K` | `16` | How many tools to retrieve before adding the always-on core set. |
 | `RUN_LLM_EVALS` | `false` | When `1`/`true` (and an API key is set), the opt-in LLM-as-judge quality evals run in the pytest suite (`tests/test_evals_quality.py`). |
+
+### Web UI & production security
+
+| Variable | Default | Description |
+|---|---|---|
+| `WEB_UI_ENABLED` | `true` | Serve the web dashboard (primary interface). |
+| `DASHBOARD_PORT` | `8787` | Local port for Flask/Gunicorn. |
+| `PUBLIC_BASE_URL` | `""` | Public HTTPS origin (required for GitHub OAuth redirects in production). |
+| `BEHIND_PROXY` | `false` | Set `true` when TLS terminates at Cloudflare/nginx (enables secure session cookies). |
+| `DASHBOARD_PIN` | `""` | Optional **6-digit PIN** — entire UI/API gated until unlocked (recommended in production). |
+| `FLASK_SECRET_KEY` | `dev-change-me` | Session signing secret; set a long random string in production. |
+| `GITHUB_CLIENT_ID` / `GITHUB_CLIENT_SECRET` | `""` | GitHub OAuth app for linking repos in Worlds. |
+| `GITHUB_REDIRECT_URI` | local callback URL | Must match your OAuth app; use `https://your-domain/api/github/callback` in prod. |
+| `AWS_S3_BUCKET` | `""` | S3 bucket for vault document payloads (IAM role on EC2; keys optional). |
 
 ### Google Calendar (optional)
 
@@ -1262,21 +1281,27 @@ Founder-OS/
 
 ## 21. Web dashboard (primary interface)
 
-The web UI (`dashboard/static/`, served by Flask on `DASHBOARD_PORT`) is the **main way to use Founder OS**.
+The web UI (`dashboard/static/`, served by Flask/Gunicorn on `DASHBOARD_PORT`) is the **main way to use Founder OS**. It is a human-first operator console — you control worlds, CRM, and goals directly; agents assist on demand.
 
 | Area | What you do |
 |------|-------------|
-| **Chat** | Talk to the supervisor or a selected specialist; live tool/status stream. |
-| **Agent fleet** | Pick Pulse, Outreach, Leads, Market intel, or Vault — each with a focused mission. |
-| **Worlds** | Tree + map of root/sub-worlds; inspector; **vault panel** (facets, link repo, ingest, search). |
+| **Control** | Dashboard home — direct actions (new world, CRM contact, goal, reminder, agent policy, approvals), live agent status, runtime graph. |
+| **Ask agent** | Optional chat with supervisor or a selected specialist; RAG mode picker; file upload. |
+| **Agent fleet** | Pulse, Outreach, Leads, Market intel, Vault — delegate tasks, inspect runs. |
+| **Worlds** | Create/edit worlds; **knowledge vault** (facet tabs, add/edit/delete docs); **GitHub OAuth** (connect, link repos, sync to S3). |
+| **CRM** | Add contacts, inline status updates, pipeline view, follow-ups due. |
+| **Goals** | Active goals, reminders, mark done — forms in the UI. |
 | **Approvals** | Approve or reject queued emails and other risky actions. |
-| **CRM / runway / activity** | Pipeline, financial snapshot, recent actions. |
+| **Memory / Tools / Activity** | Semantic search, tool catalog, recent actions and traces. |
+| **Settings** | Autonomy level, auto-approve, pause agent, integration status, lock dashboard (PIN logout). |
 
-**World selector** (top bar) sets the active world for chat context and vault operations.
+**World selector** (top bar) sets active context for chat and vault. **Mobile:** compact top bar + bottom tab bar (Control, Agent, Agents, Worlds, More).
 
-**Connect integrations (roadmap):** a Settings screen will replace manual `.env` setup for Gmail, GitHub, Calendar, LinkedIn, and X. Until then, configure credentials in `.env` and use Worlds → **Link & ingest** for GitHub doc repos.
+**Security:** set `DASHBOARD_PIN` to gate the UI with a 6-digit code; sessions use `FLASK_SECRET_KEY`. `/api/health` stays open for load balancers; `/api/github/callback` is PIN-exempt for OAuth.
 
-Env flags: `WEB_UI_ENABLED=true` (default), `DASHBOARD_PORT=8787`, `DASHBOARD_HOST=127.0.0.1` (use `0.0.0.0` on EC2 behind TLS).
+**Integrations today:** GitHub OAuth in Worlds; Gmail/Calendar/Qdrant/X via `.env` (status shown in Settings). In-app Connect for Gmail/LinkedIn remains roadmap.
+
+Env flags: `WEB_UI_ENABLED=true` (default), `DASHBOARD_PORT=8787`, `WEB_HOST=127.0.0.1` (use `0.0.0.0` on EC2 behind TLS).
 
 ---
 
@@ -1611,6 +1636,13 @@ Built incrementally, one commit per phase:
 | `feat(ui): vault explorer` | Worlds vault panel, agent fleet hub, Stamped Energy design tokens. |
 | `feat(smart_recall)` | Cross-module fused recall: hybrid text + knowledge-graph relations (1-/2-hop) + communities; `smart_recall` tool. |
 | `feat(scripts): check_qdrant` | Health-check script for Qdrant connectivity and collection vector counts. |
+| `feat(ui): human-first control panel` | Direct controls for worlds, CRM, goals; chat renamed Ask agent; per-world knowledge graph UI. |
+| `feat(vault): S3 object storage` | Vault document registry, S3/local payloads, Qdrant descriptions, REST CRUD. |
+| `feat(github): multi-repo OAuth` | GitHub OAuth flow; link/sync multiple repos per world. |
+| `feat(deploy): AWS production stack` | Gunicorn entrypoint, `deploy/aws/` (bootstrap, systemd, nginx, IAM), startup checks. |
+| `feat(auth): 6-digit PIN gate` | Session PIN for UI/API; rate limiting; Cloudflare deploy guide. |
+| `test: dashboard API integration` | Flask test client coverage for auth, worlds, vault, CRM, goals. |
+| `feat(ui): mobile + design refresh` | Compact mobile top bar, Plus Jakarta Sans, improved forms, black/coral branding. |
 
 ---
 
@@ -2543,9 +2575,9 @@ it comes from**, **how Founder OS implements it**, and **why it matters here**. 
 
 <div align="center">
 
-**Founder OS** — your personal aggregator hub for parallel projects and founder life.
+**Founder OS** — your personal operator console for parallel projects and founder life.
 
-*Web-first · Deep work elsewhere · Query what you ingest · Outreach with approval · AWS-ready*
+*Human-first · Worlds & vault · GitHub sync · Approval-gated outreach · PIN-protected · AWS-ready*
 
 </div>
 

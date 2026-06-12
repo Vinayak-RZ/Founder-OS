@@ -21,7 +21,7 @@ It is an **aggregator hub**, not a deep research or coding workstation. Extensiv
 - **Integrations** — Gmail/Calendar via `.env` today; **Settings → Connect** for GitHub, Gmail, LinkedIn, X (roadmap)
 
 ## Brand personality
-Capable, calm, direct. A serious personal operator console — not a toy chatbot, not enterprise bloat. Stamped Energy / Forge Industrial visual language (coral accent, forest green, warm greys, Plus Jakarta Sans).
+Capable, calm, direct. A serious personal operator console — not a toy chatbot, not enterprise bloat. Stamped Energy / Forge Industrial visual language (coral accent, black nav, warm greys, Plus Jakarta Sans).
 
 ## Anti-references
 - Generic AI SaaS (purple gradients, glass cards)

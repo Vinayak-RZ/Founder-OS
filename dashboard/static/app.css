@@ -91,17 +91,10 @@ body {
 .brand-mark {
   width: 40px;
   height: 40px;
-  border-radius: var(--rounded-md);
-  background: var(--color-primary);
-  color: var(--color-on-primary);
-  font-family: var(--font-display);
-  font-weight: 800;
-  font-size: 11px;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  display: grid;
-  place-items: center;
+  border-radius: var(--rounded-sm);
   flex-shrink: 0;
+  display: block;
+  object-fit: contain;
 }
 
 .brand-name {
@@ -133,6 +126,7 @@ body {
   gap: 2px;
   flex: 1;
   overflow-y: auto;
+  padding: 0 6px;
 }
 
 .sidebar-foot {
@@ -172,26 +166,52 @@ body {
   justify-content: space-between;
   align-items: center;
   gap: var(--space-xs);
-  padding: var(--space-sm) var(--space-xl);
+  padding: 14px var(--space-xl);
   border-bottom: 1px solid var(--color-outline-variant);
   background: var(--color-canvas-elevated);
   position: sticky;
   top: 0;
   z-index: 10;
-  min-height: 64px;
+  min-height: 56px;
+}
+
+.topbar-start {
+  display: none;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.topbar-mark {
+  display: none;
+  border-radius: 6px;
 }
 
 .topbar-lead {
   display: flex;
   flex-direction: column;
-  gap: var(--space-xxs);
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+
+.topbar-title-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
   min-width: 0;
 }
 
+.topbar-title,
 .topbar h1 {
   text-wrap: balance;
-  font-size: var(--text-xl);
-  letter-spacing: 0.02em;
+  font-family: var(--font-display);
+  font-size: var(--text-lg);
+  font-weight: 700;
+  line-height: 1.25;
+  letter-spacing: -0.02em;
+  color: var(--color-on-surface);
+  margin: 0;
 }
 
 .live-strip {
@@ -241,7 +261,7 @@ body {
   min-width: 0;
 }
 
-@media (max-width: 1100px) {
+@media (max-width: 1100px) and (min-width: 901px) {
   .topbar {
     flex-wrap: wrap;
     align-items: flex-start;
@@ -270,8 +290,12 @@ body {
   min-width: 140px;
 }
 
-.world-select-wrap .caption-uppercase {
-  font-size: 9px;
+.world-select-label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--color-outline);
   line-height: 1;
 }
 
@@ -283,9 +307,59 @@ body {
   padding: 8px 10px;
   font-family: var(--font-sans);
   font-size: var(--text-sm);
+  font-weight: 500;
   min-height: 36px;
   min-width: 160px;
   max-width: 240px;
+}
+
+.topbar-icon-btn {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-width: 40px;
+  min-height: 40px;
+  padding: 8px 10px;
+  border: 1px solid var(--color-outline-variant);
+  border-radius: var(--rounded-md);
+  background: var(--color-canvas-elevated);
+  color: var(--color-secondary);
+  font-family: var(--font-sans);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease, color 0.15s ease;
+}
+
+.topbar-icon-btn:hover {
+  border-color: color-mix(in srgb, var(--color-secondary) 28%, transparent);
+  background: var(--color-surface-low);
+}
+
+.topbar-icon {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+}
+
+.topbar-notif-badge {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  font-size: 9px;
+  line-height: 16px;
+}
+
+.pin-gate__logo {
+  display: block;
+  max-width: 200px;
+  height: auto;
+  margin-bottom: var(--space-sm);
 }
 
 .world-select:focus {
@@ -403,13 +477,15 @@ body {
 /* Status pills (semantic borders, not Rosso) */
 
 .pill {
-  display: inline-block;
-  padding: 4px 12px;
-  border-radius: var(--rounded-full);
-  font-size: 11px;
+  display: inline-flex;
+  align-items: center;
+  padding: 5px 10px;
+  border-radius: var(--rounded-sm);
+  font-size: 10px;
   font-weight: 600;
-  letter-spacing: 1.1px;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
+  line-height: 1.3;
 }
 
 .pill.ok {
@@ -2531,6 +2607,8 @@ td {
   width: min(100%, 22rem);
   padding: var(--space-lg);
   text-align: center;
+  border: 1px solid color-mix(in srgb, var(--color-secondary) 10%, var(--color-outline-variant));
+  box-shadow: var(--shadow-card);
 }
 
 .pin-gate__form {
@@ -2646,7 +2724,16 @@ td {
 .human-field {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 6px;
+}
+
+.human-field > .caption-uppercase,
+.human-field > span:first-child:not(.human-check__box) {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: none;
+  color: var(--color-on-surface);
 }
 
 .human-field--checkbox {
@@ -2655,6 +2742,15 @@ td {
   gap: var(--space-xs);
   padding-top: 1.4rem;
   font-size: 0.875rem;
+  cursor: pointer;
+}
+
+.human-field--checkbox input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  accent-color: var(--color-secondary);
+  cursor: pointer;
 }
 
 .human-form__actions {

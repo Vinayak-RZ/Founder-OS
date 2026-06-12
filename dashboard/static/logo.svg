@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 232 48" fill="none" role="img" aria-label="Founder OS">
+  <rect width="48" height="48" rx="6" fill="#0a0a0a"/>
+  <rect x="11" y="13" width="26" height="6" rx="1.5" fill="#f75440"/>
+  <rect x="11" y="21.5" width="26" height="5" rx="1.5" fill="#ffffff" fill-opacity="0.9"/>
+  <rect x="11" y="28.5" width="26" height="5" rx="1.5" fill="#ffffff" fill-opacity="0.45"/>
+  <rect x="11" y="35" width="17" height="3.5" rx="1" fill="#ffffff" fill-opacity="0.22"/>
+  <text x="60" y="22" font-family="'Plus Jakarta Sans', system-ui, sans-serif" font-size="18" font-weight="700" fill="#191c1a" letter-spacing="-0.03em">Founder OS</text>
+  <text x="60" y="36" font-family="'Plus Jakarta Sans', system-ui, sans-serif" font-size="10" font-weight="600" fill="#737373" letter-spacing="0.1em">STAMPED ENERGY</text>
+</svg>

@@ -1,16 +1,16 @@
 /* Components — Forge Industrial v2.0 / Stamped Energy */
 
-/* Sidebar navigation (deep forest anchor band) */
+/* Sidebar navigation — black anchor band */
 .top-nav-on-dark {
-  background: var(--color-secondary);
+  background: var(--color-nav-surface);
   color: var(--color-on-secondary);
   min-height: 64px;
-  border-right: 1px solid color-mix(in srgb, var(--color-on-secondary) 12%, transparent);
+  border-right: 1px solid color-mix(in srgb, var(--color-on-secondary) 10%, transparent);
 }
 
 .nav-section-label {
   margin: var(--space-sm) 0 var(--space-xxs);
-  padding: 0 14px;
+  padding: 0 10px;
   font-size: 10px;
   font-weight: 700;
   letter-spacing: 0.14em;
@@ -34,9 +34,9 @@
   color: color-mix(in srgb, var(--color-on-secondary) 68%, transparent);
   background: transparent;
   border: none;
-  border-radius: var(--rounded-md);
-  padding: 10px 12px;
-  min-height: 44px;
+  border-radius: var(--rounded-sm);
+  padding: 9px 10px;
+  min-height: 40px;
   width: 100%;
   text-align: left;
   cursor: pointer;
@@ -86,29 +86,27 @@
   color: var(--color-on-secondary);
 }
 
-/* Active: soft elevated pill + glowing dot — no left accent bar */
+/* Active: rectangular highlight, aligned to nav column */
 .nav-link.is-active {
-  background: color-mix(in srgb, var(--color-inverse-on-surface) 11%, transparent);
-  color: var(--color-inverse-on-surface);
+  background: color-mix(in srgb, var(--color-on-secondary) 10%, transparent);
+  color: var(--color-on-secondary);
   font-weight: 600;
-  box-shadow:
-    inset 0 0 0 1px color-mix(in srgb, var(--color-inverse-on-surface) 14%, transparent),
-    0 1px 2px color-mix(in srgb, #000 12%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-on-secondary) 12%, transparent);
 }
 
 .nav-link.is-active .nav-icon {
-  background: color-mix(in srgb, var(--color-inverse-on-surface) 16%, transparent);
-  color: var(--color-inverse-on-surface);
+  background: color-mix(in srgb, var(--color-on-secondary) 14%, transparent);
+  color: var(--color-on-secondary);
 }
 
 .nav-link.is-active::after {
   content: "";
-  width: 7px;
-  height: 7px;
-  border-radius: var(--rounded-full);
+  width: 3px;
+  height: 14px;
+  border-radius: 1px;
   background: var(--color-primary);
   flex-shrink: 0;
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-primary) 22%, transparent);
+  align-self: center;
 }
 
 /* Primary CTA */
@@ -244,9 +242,9 @@
   background: var(--color-canvas-elevated);
   color: var(--color-on-surface);
   border-radius: var(--rounded-lg);
-  border: 1px solid var(--color-outline-variant);
+  border: 1px solid color-mix(in srgb, var(--color-secondary) 8%, var(--color-outline-variant));
   padding: var(--space-sm);
-  box-shadow: none;
+  box-shadow: 0 1px 0 color-mix(in srgb, var(--color-secondary) 4%, transparent);
 }
 
 /* Primary accent band */
@@ -301,8 +299,8 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: 4px 12px;
-  border-radius: var(--rounded-full);
+  padding: 4px 10px;
+  border-radius: var(--rounded-sm);
   background: color-mix(in srgb, var(--color-primary) 8%, transparent);
   border: 1px solid color-mix(in srgb, var(--color-primary) 25%, transparent);
   color: var(--color-primary);
@@ -331,31 +329,88 @@
   color: var(--color-on-primary);
 }
 
-/* Inputs — white, forest focus */
-.text-input-on-dark {
+/* Form controls — elevated fields, forest focus ring */
+.text-input-on-dark,
+.field-select,
+select.field-select,
+textarea.text-input-on-dark {
   background: var(--color-canvas-elevated);
   color: var(--color-on-surface);
-  border: 1px solid var(--color-outline-variant);
+  border: 1px solid color-mix(in srgb, var(--color-secondary) 14%, var(--color-outline-variant));
   border-radius: var(--rounded-md);
-  padding: 14px 16px;
-  min-height: 48px;
+  padding: 12px 14px;
+  min-height: 44px;
   font-family: var(--font-sans);
   font-size: 14px;
-  font-weight: 400;
-  line-height: 1.5;
+  font-weight: 500;
+  line-height: 1.45;
   width: 100%;
-  transition: border-width 0.1s ease, border-color 0.15s ease;
+  box-shadow: inset 0 1px 2px color-mix(in srgb, var(--color-secondary) 4%, transparent);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+textarea.text-input-on-dark {
+  min-height: 112px;
+  resize: vertical;
+  padding-top: 12px;
+}
+
+.field-select,
+select.field-select,
+.world-select.field-select {
+  appearance: none;
+  padding-right: 36px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1.5 6 6.5 11 1.5' fill='none' stroke='%230a0a0a' stroke-width='1.75' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  cursor: pointer;
 }
 
 .text-input-on-dark::placeholder {
-  color: var(--color-outline);
+  color: color-mix(in srgb, var(--color-outline) 88%, var(--color-on-surface));
+  font-weight: 400;
 }
 
-.text-input-on-dark:focus {
+.text-input-on-dark:hover,
+.field-select:hover,
+.world-select.field-select:hover {
+  border-color: color-mix(in srgb, var(--color-secondary) 22%, var(--color-outline-variant));
+}
+
+.text-input-on-dark:focus,
+.field-select:focus,
+.world-select.field-select:focus {
   outline: none;
-  border-width: 2px;
   border-color: var(--color-secondary);
-  padding: 13px 15px;
+  box-shadow:
+    inset 0 1px 2px color-mix(in srgb, var(--color-secondary) 4%, transparent),
+    0 0 0 3px color-mix(in srgb, var(--color-secondary) 12%, transparent);
+}
+
+.text-input-on-dark:disabled,
+.field-select:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  background: var(--color-surface-low);
+}
+
+.field-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.field-label {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--color-on-surface);
+}
+
+.field-hint {
+  font-size: 12px;
+  color: var(--color-on-surface-variant);
+  line-height: 1.4;
 }
 
 /* Light data tables */
@@ -385,9 +440,9 @@
 .caption-uppercase {
   font-size: 11px;
   font-weight: 600;
-  letter-spacing: 0.14em;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: var(--color-primary);
+  color: color-mix(in srgb, var(--color-secondary) 72%, var(--color-primary));
 }
 
 .display-md {

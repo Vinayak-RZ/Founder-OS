@@ -10,6 +10,7 @@
   --color-inverse-primary: #ffb4a8;
 
   --color-secondary: #051f13;
+  --color-nav-surface: #0a0a0a;
   --color-on-secondary: #ffffff;
   --color-secondary-container: #ccead6;
 
@@ -58,10 +59,10 @@
   --color-accent-yellow: var(--color-primary);
   --color-accent: var(--color-primary);
 
-  /* Typography */
+  /* Typography — Plus Jakarta Sans throughout (no generic Inter body stack) */
+  --font-sans-fallback: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-sans: "Plus Jakarta Sans", var(--font-sans-fallback);
   --font-display: "Plus Jakarta Sans", var(--font-sans-fallback);
-  --font-sans-fallback: -apple-system, system-ui, sans-serif;
-  --font-sans: "Inter", var(--font-sans-fallback);
   --font-mono: "JetBrains Mono", ui-monospace, monospace;
 
   /* Radius — industrial, not sharp squares */
