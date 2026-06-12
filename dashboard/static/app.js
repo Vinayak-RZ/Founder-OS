@@ -45,7 +45,9 @@ let state = {
     vaultDocEdit: null,
   },
   _worldTemplates: null,
+  _operations: {},
 };
+state._syncingLinkIds = new Set();
 let currentView = "dashboard";
 
 function readJsonStorage(key, fallback) {
@@ -118,6 +120,102 @@ async function api(path, opts = {}) {
     throw e;
   } finally {
     clearTimeout(timer);
+  }
+}
+
+function isLinkSyncing(linkId) {
+  return state._syncingLinkIds.has(String(linkId));
+}
+
+function renderOpsStack() {
+  const host = document.getElementById("ops-stack");
+  if (!host) return;
+  const now = Date.now();
+  const items = Object.values(state._operations || {})
+    .filter(o => o.status === "running" || (o.finishedAt && now - o.finishedAt < 8000))
+    .slice(0, 5);
+  if (!items.length) {
+    host.innerHTML = "";
+    host.hidden = true;
+    return;
+  }
+  host.hidden = false;
+  host.innerHTML = items.map(o => {
+    const pct = Math.round((o.progress || 0) * 100);
+    const cls = o.status === "running" ? "is-running" : (o.status === "error" ? "is-error" : "is-done");
+    const statusLabel = o.status === "running" ? "Working" : (o.status === "error" ? "Failed" : "Done");
+    return `<div class="ops-card ${cls}" data-op-id="${esc(o.id)}">
+      <div class="ops-card__head">
+        <span class="ops-card__title">${esc(o.title)}</span>
+        <span class="ops-card__status">${statusLabel}</span>
+      </div>
+      <p class="ops-card__detail">${esc(o.detail || "")}</p>
+      ${o.status === "running" ? `<div class="ops-card__bar" role="progressbar" aria-valuenow="${pct}" aria-valuemin="0" aria-valuemax="100"><span style="width:${pct}%"></span></div>` : ""}
+    </div>`;
+  }).join("");
+}
+
+async function runGithubSyncJob(jobId, title, meta = {}) {
+  const opId = jobId;
+  state._operations[opId] = {
+    id: opId,
+    title,
+    detail: "Scanning repository…",
+    progress: 0,
+    status: "running",
+  };
+  if (meta.linkId != null) state._syncingLinkIds.add(String(meta.linkId));
+  renderOpsStack();
+  if (meta.worldId && currentView === "world") render();
+
+  try {
+    while (true) {
+      const batch = await api(`/sync-jobs/${encodeURIComponent(jobId)}/batch`, {
+        method: "POST",
+        body: JSON.stringify({ batch_size: 8 }),
+        timeoutMs: 180000,
+      });
+      const op = state._operations[opId];
+      if (op) {
+        op.progress = batch.progress || 0;
+        op.detail = batch.message || `${batch.imported || 0} files imported`;
+        op.status = batch.status === "failed" ? "error" : (batch.done ? "done" : "running");
+      }
+      renderOpsStack();
+      if (batch.done) break;
+    }
+  } catch (e) {
+    const op = state._operations[opId];
+    if (op) {
+      op.status = "error";
+      op.detail = e.message || "Sync failed";
+      op.finishedAt = Date.now();
+    }
+    renderOpsStack();
+    throw e;
+  } finally {
+    const op = state._operations[opId];
+    if (op && !op.finishedAt) op.finishedAt = Date.now();
+    if (meta.linkId != null) state._syncingLinkIds.delete(String(meta.linkId));
+    renderOpsStack();
+    try {
+      await refresh();
+      if (meta.worldId) await loadWorldVault(meta.worldId);
+      if (currentView === "world") render();
+      updateBadges();
+    } catch (_) { /* ignore refresh errors */ }
+    setTimeout(() => {
+      delete state._operations[opId];
+      renderOpsStack();
+    }, 8000);
+  }
+}
+
+async function resumeActiveSyncJobs(worldId) {
+  const res = await api(`/worlds/${encodeURIComponent(worldId)}/sync-jobs`).catch(() => ({ jobs: [] }));
+  for (const j of res.jobs || []) {
+    if (!j?.id || state._operations[j.id]) continue;
+    runGithubSyncJob(j.id, `Syncing ${j.full_name}`, { worldId, linkId: j.link_id }).catch(console.error);
   }
 }
 
@@ -1250,18 +1348,22 @@ function renderGithubReposPanel(w, vault) {
   const pickOpts = ghRepos.map(r =>
     `<option value="${esc(r.full_name)}">${esc(r.full_name)}${r.private ? " (private)" : ""}</option>`
   ).join("");
-  const linkedRows = linked.map(r => `
+  const linkedRows = linked.map(r => {
+    const syncing = isLinkSyncing(r.id);
+    return `
     <div class="github-repo-row">
       <div>
         <strong class="mono">${esc(r.full_name)}</strong>
+        ${syncing ? `<span class="sync-badge">Syncing</span>` : ""}
         <span class="world-meta">${r.file_count || 0} files synced${r.synced_at ? ` · ${esc(r.synced_at)}` : ""}</span>
         ${r.last_error ? `<span class="world-meta" style="color:var(--color-warn)">${esc(r.last_error)}</span>` : ""}
       </div>
       <div class="github-repo-row__actions">
-        <button type="button" class="button-outline-on-dark button-sm" data-github-sync="${r.id}" data-world-id="${esc(w.id)}">Sync to ${esc(vaultStorageLabel())}</button>
-        <button type="button" class="button-tertiary-text button-sm" data-github-unlink="${r.id}" data-world-id="${esc(w.id)}">Unlink</button>
+        <button type="button" class="button-outline-on-dark button-sm${syncing ? " is-busy" : ""}" data-github-sync="${r.id}" data-world-id="${esc(w.id)}"${syncing ? " disabled" : ""}>${syncing ? "Syncing…" : `Sync to ${esc(vaultStorageLabel())}`}</button>
+        <button type="button" class="button-tertiary-text button-sm" data-github-unlink="${r.id}" data-world-id="${esc(w.id)}"${syncing ? " disabled" : ""}>Unlink</button>
       </div>
-    </div>`).join("");
+    </div>`;
+  }).join("");
 
   if (!oauthOk) {
     return `<section class="github-repos-panel">
@@ -1293,7 +1395,7 @@ function renderGithubReposPanel(w, vault) {
           ${pickOpts}
         </select>
       </label>
-      <button type="button" class="button-primary button-sm" data-github-add="${esc(w.id)}">Link &amp; sync</button>
+      <button type="button" class="button-primary button-sm" data-github-add="${esc(w.id)}"${state._syncingLinkIds.size ? " disabled" : ""}>Link &amp; sync</button>
     </div>
     <div class="github-repo-list">${linkedRows || "<p class='body-md muted'>No GitHub repos linked yet.</p>"}</div>
   </section>`;
@@ -1954,6 +2056,7 @@ async function loadViewData(view) {
       state._githubRepos = [];
     }
     await loadWorldVault(inspectorWorldId());
+    await resumeActiveSyncJobs(inspectorWorldId());
   }
   if (view === "memory") state._memoryFull = await api("/graph/memory");
   if (view === "dashboard" || view === "chat" || view === "agents") {
@@ -2463,24 +2566,44 @@ async function startVaultDocEdit(worldId, docId) {
 async function connectGithubRepo(worldId) {
   const full_name = $("#github-repo-pick")?.value?.trim();
   if (!full_name) return alert("Select a repository");
+  const btn = document.querySelector(`[data-github-add="${worldId}"]`);
+  if (btn) btn.disabled = true;
   try {
     const res = await api(`/worlds/${encodeURIComponent(worldId)}/repos`, {
       method: "POST",
       body: JSON.stringify({ full_name }),
+      timeoutMs: 120000,
     });
-    alert(`Linked ${full_name}: ${res.sync?.imported || 0} files synced to ${vaultStorageLabel()}`);
-    await loadWorldVault(worldId);
-    render();
-  } catch (e) { alert(e.message); }
+    if (res.job?.status === "failed") throw new Error(res.job.message || "Could not start sync");
+    if (res.job?.id) {
+      await runGithubSyncJob(res.job.id, `Syncing ${full_name}`, { worldId, linkId: res.repo?.id });
+    } else {
+      await loadWorldVault(worldId);
+      render();
+    }
+  } catch (e) {
+    alert(e.message);
+  } finally {
+    if (btn) btn.disabled = state._syncingLinkIds.size > 0;
+  }
 }
 
 async function syncGithubRepo(worldId, linkId) {
+  if (isLinkSyncing(linkId)) return;
   try {
-    const res = await api(`/worlds/${encodeURIComponent(worldId)}/repos/${encodeURIComponent(linkId)}/sync`, { method: "POST", body: "{}" });
-    alert(`Synced ${res.imported || 0} files${res.errors?.length ? ` (${res.errors.length} errors)` : ""}`);
-    await loadWorldVault(worldId);
-    render();
-  } catch (e) { alert(e.message); }
+    const res = await api(`/worlds/${encodeURIComponent(worldId)}/repos/${encodeURIComponent(linkId)}/sync`, {
+      method: "POST",
+      body: "{}",
+      timeoutMs: 120000,
+    });
+    if (res.job?.status === "failed") throw new Error(res.job.message || "Could not start sync");
+    if (res.job?.id) {
+      const name = (state._worldVault?.github_repos || []).find(r => String(r.id) === String(linkId))?.full_name || "repository";
+      await runGithubSyncJob(res.job.id, `Re-syncing ${name}`, { worldId, linkId });
+    }
+  } catch (e) {
+    alert(e.message);
+  }
 }
 
 async function unlinkGithubRepo(worldId, linkId) {

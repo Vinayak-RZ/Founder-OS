@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from types import SimpleNamespace
+from unittest.mock import patch
 
 import pytest
 
@@ -176,3 +177,30 @@ def test_infrastructure_health_requires_pin_then_ok(client, pin_config):
     assert "s3" in body
     assert "disk" in body
     assert "app" in body
+
+
+def test_sync_job_endpoints(client, pin_config, monkeypatch):
+    import tempfile
+    from memory import sync_jobs as sj
+
+    path = tempfile.mktemp(suffix=".db")
+    monkeypatch.setenv("FOUNDER_OS_DB", path)
+    sj.init_sync_jobs_db()
+    job = sj.create_job(
+        world_id="w1",
+        link_id=1,
+        full_name="o/r",
+        branch="main",
+        world_slug="w1",
+        template_id="startup",
+        manifest=[],
+    )
+    _login(client, TEST_PIN)
+    r = client.get(f"/api/sync-jobs/{job['id']}")
+    assert r.status_code == 200
+    assert r.get_json()["id"] == job["id"]
+
+    with patch("integrations.github_sync.process_sync_batch", return_value={"id": job["id"], "done": True, "imported": 0}):
+        b = client.post(f"/api/sync-jobs/{job['id']}/batch", json={"batch_size": 4})
+    assert b.status_code == 200
+    assert b.get_json()["done"] is True

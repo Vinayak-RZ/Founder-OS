@@ -597,6 +597,14 @@
     grid-template-columns: 1fr;
   }
 
+  .ops-stack {
+    top: auto;
+    bottom: calc(var(--mobile-tabbar-height, 56px) + 12px);
+    right: 8px;
+    left: 8px;
+    width: auto;
+  }
+
   .hero-band-cinema {
     margin-left: calc(-1 * var(--space-xs));
     margin-right: calc(-1 * var(--space-xs));

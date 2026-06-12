@@ -913,13 +913,48 @@ def api_world_repos_connect(world_id):
         return jsonify({"error": str(e)}), 400
     tpl = w.get("template") or template_for_kind(w.get("kind", "project"))
     slug = w.get("slug") or world_id
-    sync = _safe(
-        lambda: github_sync.sync_repo_to_world(
-            world_id, slug, tpl, full_name, link.get("default_branch"), link_id=link["id"]
+    job = _safe(
+        lambda: github_sync.start_repo_sync_job(
+            world_id=world_id,
+            world_slug=slug,
+            template_id=tpl,
+            full_name=full_name,
+            branch=link.get("default_branch"),
+            link_id=link["id"],
         ),
-        {"error": "sync failed"},
+        {"error": "sync job failed", "status": "failed"},
     )
-    return jsonify({"repo": link, "sync": sync})
+    return jsonify({"repo": link, "job": job})
+
+
+@bp.route("/sync-jobs/<job_id>")
+def api_sync_job_get(job_id):
+    from memory import sync_jobs
+
+    job = sync_jobs.public_view(job_id)
+    if not job:
+        return jsonify({"error": "job not found"}), 404
+    return jsonify(job)
+
+
+@bp.route("/sync-jobs/<job_id>/batch", methods=["POST"])
+def api_sync_job_batch(job_id):
+    from integrations import github_sync
+
+    data = request.get_json(silent=True) or {}
+    batch_size = int(data.get("batch_size") or github_sync.SYNC_BATCH_DEFAULT)
+    batch_size = max(1, min(batch_size, 25))
+    result = github_sync.process_sync_batch(job_id, batch_size=batch_size)
+    if result.get("error") == "job not found":
+        return jsonify(result), 404
+    return jsonify(result)
+
+
+@bp.route("/worlds/<world_id>/sync-jobs")
+def api_world_sync_jobs(world_id):
+    from memory import sync_jobs
+
+    return jsonify({"jobs": sync_jobs.list_active_for_world(world_id)})
 
 
 @bp.route("/worlds/<world_id>/repos/<int:link_id>", methods=["DELETE"])
@@ -954,10 +989,15 @@ def api_world_repos_sync(world_id, link_id):
         return jsonify({"error": "repo link not found"}), 404
     tpl = w.get("template") or template_for_kind(w.get("kind", "project"))
     slug = w.get("slug") or world_id
-    result = _safe(
-        lambda: github_sync.sync_repo_to_world(
-            world_id, slug, tpl, link["full_name"], link.get("default_branch"), link_id=link_id
+    job = _safe(
+        lambda: github_sync.start_repo_sync_job(
+            world_id=world_id,
+            world_slug=slug,
+            template_id=tpl,
+            full_name=link["full_name"],
+            branch=link.get("default_branch"),
+            link_id=link_id,
         ),
-        {"error": "sync failed"},
+        {"error": "sync job failed", "status": "failed"},
     )
-    return jsonify(result)
+    return jsonify({"job": job})
