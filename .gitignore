@@ -2,7 +2,8 @@
 data/*
 !data/knowledge/
 !data/knowledge/**
-
+.pem
+nawab.pem
 # Graphify (local knowledge-graph tooling; regenerate with `graphify update .`)
 graphify-out/
 .cursor/rules/graphify.mdc

@@ -1,4 +1,6 @@
-/* Founder OS Web UI */
+/* Nawab OS Web UI */
+
+const APP_NAME = "Nawab OS";
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
 
@@ -137,7 +139,7 @@ function fmtTime(ts) {
 
 function ownerLabel() {
   const c = state.config || {};
-  return c.my_name ? `${c.my_name}'s Founder OS` : "Founder OS";
+  return c.my_name ? `${c.my_name}'s ${APP_NAME}` : APP_NAME;
 }
 
 function currentWorldId() {
@@ -822,7 +824,7 @@ function renderDashboard() {
   return `
     <header class="command-header driver-card">
       <div>
-        <p class="section-eyebrow">${esc(cfg.company_name || "Founder OS")}</p>
+        <p class="section-eyebrow">${esc(cfg.company_name || APP_NAME)}</p>
         <h2 class="title-md">${esc(ownerLabel())}</h2>
       </div>
       <div class="command-header__actions">
@@ -1758,6 +1760,67 @@ function renderActivity() {
   </div>`;
 }
 
+function infraHealthCard(title, ok, lines, detail) {
+  const status = ok ? "Healthy" : "Issue";
+  return `<div class="integration-card infra-health-card${ok ? " is-connected" : " is-warning"}">
+    <div class="integration-card__head">
+      <span class="title-sm">${esc(title)}</span>
+      <span class="integration-card__status">${status}</span>
+    </div>
+    <dl class="infra-health-dl">${lines}</dl>
+    ${detail ? `<p class="world-meta">${esc(detail)}</p>` : ""}
+  </div>`;
+}
+
+function renderInfrastructureHealth() {
+  const h = state._infraHealth;
+  if (!h) {
+    return `<section class="driver-card span-12">
+      <div class="infra-health-head">
+        <p class="caption-uppercase">Infrastructure</p>
+        <button type="button" class="button-outline-on-dark button-sm" id="btn-infra-refresh">Check health</button>
+      </div>
+      <p class="body-md muted" style="margin-top:var(--space-sm)">Monitor EC2 host, S3 vault bucket, and disk on this server.</p>
+    </section>`;
+  }
+  const host = h.host || {};
+  const s3 = h.s3 || {};
+  const disk = h.disk || {};
+  const app = h.app || {};
+  const hostLines = host.platform === "ec2"
+    ? `<div class="spec-cell"><dt>Instance</dt><dd class="small mono">${esc(host.instance_id || "—")}</dd></div>
+       <div class="spec-cell"><dt>Region</dt><dd class="small">${esc(host.region || "—")}</dd></div>
+       <div class="spec-cell"><dt>Type</dt><dd class="small">${esc(host.instance_type || "—")}</dd></div>
+       <div class="spec-cell"><dt>IAM role</dt><dd class="small">${esc(host.iam_role || "—")}</dd></div>`
+    : `<div class="spec-cell"><dt>Host</dt><dd class="small">Local / dev</dd></div>`;
+  const s3Lines = s3.configured
+    ? `<div class="spec-cell"><dt>Bucket</dt><dd class="small mono">${esc(s3.bucket || "—")}</dd></div>
+       <div class="spec-cell"><dt>Region</dt><dd class="small">${esc(s3.region || "—")}</dd></div>
+       <div class="spec-cell"><dt>Read/write</dt><dd class="small">${s3.read_write_ok ? "OK" : (s3.reachable ? "Reachable only" : "—")}</dd></div>`
+    : `<div class="spec-cell"><dt>Vault</dt><dd class="small">Local disk only</dd></div>`;
+  const diskLines = `<div class="spec-cell"><dt>Data path</dt><dd class="small mono">${esc(disk.path || "—")}</dd></div>
+    <div class="spec-cell"><dt>Free</dt><dd class="small">${disk.free_gb != null ? `${disk.free_gb} GB` : "—"}</dd></div>
+    <div class="spec-cell"><dt>Used</dt><dd class="small">${disk.used_pct != null ? `${disk.used_pct}%` : "—"}</dd></div>`;
+  const overallOk = !!h.ok;
+  return `<section class="driver-card span-12">
+    <div class="infra-health-head">
+      <div>
+        <p class="caption-uppercase">Infrastructure</p>
+        <p class="world-meta">Last checked ${esc(fmtTime(h.checked_at) || h.checked_at || "—")} · App storage: <strong>${esc(app.storage_backend || "—")}</strong></p>
+      </div>
+      <div class="infra-health-head__actions">
+        <span class="badge-pill${overallOk ? " badge-pill--ok" : " badge-pill--warn"}">${overallOk ? "All checks passed" : "Needs attention"}</span>
+        <button type="button" class="button-outline-on-dark button-sm" id="btn-infra-refresh">Refresh</button>
+      </div>
+    </div>
+    <div class="integration-grid" style="margin-top:var(--space-sm)">
+      ${infraHealthCard("EC2 host", host.ok !== false, hostLines, host.detail)}
+      ${infraHealthCard("S3 vault", s3.configured ? !!s3.ok : true, s3Lines, s3.detail)}
+      ${infraHealthCard("Disk", !!disk.ok, diskLines, disk.detail)}
+    </div>
+  </section>`;
+}
+
 function integrationCard(name, connected, detail) {
   return `<div class="integration-card${connected ? " is-connected" : ""}">
     <div class="integration-card__head">
@@ -1777,6 +1840,7 @@ function renderSettings() {
     ? `<button type="button" class="button-primary" id="toggle-pause">Resume agent</button>`
     : `<button type="button" class="button-outline-on-dark" id="toggle-pause">Pause agent</button>`;
   return `<div class="dashboard-grid">
+    ${renderInfrastructureHealth()}
     <section class="driver-card span-4">
       <p class="caption-uppercase">Identity</p>
       <dl class="stat-grid" style="margin-top:var(--space-sm)">
@@ -1867,6 +1931,9 @@ async function loadViewData(view) {
     } else {
       state._worldVault = {};
     }
+  }
+  if (view === "settings") {
+    state._infraHealth = await api("/infrastructure/health").catch(() => state._infraHealth || null);
   }
   if (view === "activity") state._activity = await api("/activity");
   if (view === "world") {
@@ -2035,7 +2102,7 @@ function initContentDelegation() {
       + "[data-vault-cancel-doc],[data-vault-edit-doc],[data-vault-delete-doc],"
       + "[data-github-add],[data-github-sync],[data-github-unlink],[data-goal-done],"
       + "#chat-send,#chat-clear,#memory-search,#toggle-pause,#agents-vault-search,"
-      + "#delegate-selected-btn,#btn-logout"
+      + "#delegate-selected-btn,#btn-logout,#btn-infra-refresh"
     );
     if (!el) return;
     if (el.id === "chat-send") return sendChat();
@@ -2049,6 +2116,7 @@ function initContentDelegation() {
     if (el.id === "agents-vault-search") return agentsVaultSearch();
     if (el.id === "delegate-selected-btn") return delegateAgent();
     if (el.id === "btn-logout") return logoutPin();
+    if (el.id === "btn-infra-refresh") return refreshInfraHealth();
     if (el.dataset.operator) return openOperatorAction(el.dataset.operator);
     if (el.dataset.toggleUi) {
       if (!state.ui) state.ui = {};
@@ -2146,6 +2214,20 @@ function initContentDelegation() {
   root.addEventListener("input", e => {
     if (e.target.id === "delegate-selected") state._delegateDraft = e.target.value;
   });
+}
+
+async function refreshInfraHealth() {
+  const btn = document.getElementById("btn-infra-refresh");
+  if (btn) btn.disabled = true;
+  try {
+    state._infraHealth = await api("/infrastructure/health");
+    render();
+    afterRender();
+  } catch (e) {
+    console.error("Infrastructure health check failed:", e);
+  } finally {
+    if (btn) btn.disabled = false;
+  }
 }
 
 async function logoutPin() {
@@ -2700,16 +2782,16 @@ function updateStatus() {
   if (c.agent_paused) setConnectionStatus("Agent paused", "paused");
   else setConnectionStatus("Online", "ok");
   const sub = $("#brand-sub");
-  if (sub) sub.textContent = c.my_name || c.company_name || "Founder OS";
-  document.title = c.my_name ? `Founder OS — ${c.my_name}` : "Founder OS";
+  if (sub) sub.textContent = c.my_name || c.company_name || APP_NAME;
+  document.title = c.my_name ? `${APP_NAME} — ${c.my_name}` : APP_NAME;
 }
 
 function showBootError(err) {
-  console.error("Founder OS boot failed:", err);
+  console.error(`${APP_NAME} boot failed:`, err);
   setConnectionStatus("Offline", "paused");
   const msg = esc(err?.message || String(err));
   $("#content").innerHTML = `<div class="driver-card span-12">
-    <p class="title-md">Could not connect to Founder OS</p>
+    <p class="title-md">Could not connect to ${esc(APP_NAME)}</p>
     <p class="body-md muted" style="margin-top:8px">${msg}</p>
     <p class="body-md muted" style="margin-top:12px">Make sure <code>python main.py</code> is running, then tap <strong>Refresh</strong> in the top bar.</p>
   </div>`;

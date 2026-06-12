@@ -14,6 +14,9 @@ fi
 echo "==> Deploy $(date -u +%Y-%m-%dT%H:%M:%SZ)"
 cd "$APP_DIR"
 
+# Git 2.35+ rejects repos when invoked via sudo unless explicitly trusted.
+sudo -u "$APP_USER" git config --global --add safe.directory "$APP_DIR" 2>/dev/null || true
+
 OLD_REV="$(sudo -u "$APP_USER" git rev-parse --short HEAD)"
 sudo -u "$APP_USER" git fetch origin "$BRANCH"
 # Reset to remote — server must not hold local patches (CI/CD is source of truth)

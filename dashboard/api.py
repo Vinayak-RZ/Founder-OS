@@ -86,6 +86,15 @@ def api_health():
     })
 
 
+@bp.route("/infrastructure/health")
+def api_infrastructure_health():
+    """EC2 + S3 + disk health for Settings monitor (auth required when PIN enabled)."""
+    from integrations import infrastructure_health
+
+    probe = request.args.get("probe", "1").strip().lower() not in ("0", "false", "no")
+    return jsonify(infrastructure_health.collect(probe_s3_write=probe))
+
+
 @bp.route("/state")
 def api_state():
     return jsonify(collect_state())

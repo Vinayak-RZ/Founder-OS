@@ -1,20 +1,20 @@
 <!--
-  Founder OS — README
+  Nawab OS — README
   This document is the single source of truth for the project. It describes every
   module, every tool, every table, every background job, the architecture, the
   advanced agentic-AI concepts implemented, how to run and test it, and how to
   extend it. It is intentionally exhaustive.
 -->
 
-# Founder OS — Personal Operator Console & Aggregator Hub
+# Nawab OS — Personal Operator Console & Aggregator Hub
 
 > A **personal, web-first command console** for running parallel founder threads — companies,
 > side projects, research ideas, outreach, CRM, goals, and linked documentation — in one place.
-> **Deep work stays elsewhere** (Cursor, Claude, your repos); Founder OS **coordinates**,
+> **Deep work stays elsewhere** (Cursor, Claude, your repos); Nawab OS **coordinates**,
 > **tracks**, **ingests**, and lets you **query** what you produce through worlds, a knowledge
 > vault, and a small specialist agent fleet.
 
-Founder OS is **not** a replacement for long research or coding sessions. It is an
+Nawab OS is **not** a replacement for long research or coding sessions. It is an
 **aggregator and operator console**: you drive worlds, CRM, and goals directly in the UI;
 agents assist when you want them. Outreach stays approval-gated; status stays visible across
 everything you care about.
@@ -39,7 +39,7 @@ by default).
 - **Outreach & CRM** — approval-gated email, pipeline, contacts, goals, reminders — operational core stays in-app.
 - **Agentic engine** — ReAct tool loop, Plan → Execute → Verify, Tool-RAG over **81 tools**, hybrid memory + GraphRAG, self-evolution behind approval.
 - **Safety-first** — constitution, injection defense, tiered autonomy, approval gate, spend caps, kill switch, optional **6-digit PIN** on the whole UI.
-- **Production-ready** — `run_production.py` (Gunicorn), `deploy/aws/` (systemd, nginx, IAM), `scripts/production_check.py`, `GET /api/health`.
+- **Production-ready** — `run_production.py` (Gunicorn), `deploy/aws/` (systemd, nginx, IAM), `scripts/production_check.py`, `GET /api/health`, **Settings → Infrastructure** monitor (EC2, S3, disk).
 - **Observable** — per-turn tracing, cost tracking, eval harness, replay.
 
 ---

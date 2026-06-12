@@ -164,3 +164,15 @@ def test_no_pin_allows_state_directly(client, no_pin_config):
 def test_verify_pin_unit(pin_config):
     assert verify_pin(TEST_PIN)
     assert not verify_pin("000000")
+
+
+def test_infrastructure_health_requires_pin_then_ok(client, pin_config):
+    assert client.get("/api/infrastructure/health").status_code == 401
+    _login(client, TEST_PIN)
+    r = client.get("/api/infrastructure/health?probe=0")
+    assert r.status_code == 200
+    body = r.get_json()
+    assert "host" in body
+    assert "s3" in body
+    assert "disk" in body
+    assert "app" in body
