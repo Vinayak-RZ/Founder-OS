@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#0a0a0a">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <title>Nawab OS — Stamped Energy</title>
+  <title>Nawab OS</title>
   <link rel="icon" href="/static/logo-mark.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="/static/founder-os-logo.png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -14,7 +14,7 @@
   <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/static/tokens.css?v=19">
   <link rel="stylesheet" href="/static/components.css?v=19">
-  <link rel="stylesheet" href="/static/app.css?v=24">
+  <link rel="stylesheet" href="/static/app.css?v=26">
   <link rel="stylesheet" href="/static/mobile.css?v=19">
 </head>
 <body>
@@ -39,9 +39,12 @@
         <img src="/static/logo-mark.svg" alt="" class="brand-mark" width="40" height="40" decoding="async">
         <div>
           <div class="brand-name">Nawab OS</div>
-          <div class="brand-sub caption" id="brand-sub">Stamped Energy</div>
+          <div class="brand-sub caption" id="brand-sub">Vinayak Raizada</div>
         </div>
       </div>
+      <button type="button" class="sidebar-collapse" id="btn-sidebar-collapse" aria-label="Collapse sidebar" title="Collapse sidebar">
+        <span aria-hidden="true">‹</span>
+      </button>
       <button type="button" class="sidebar-close" id="sidebar-close" aria-label="Close navigation">
         <span aria-hidden="true">×</span>
       </button>
@@ -241,8 +244,9 @@
         });
     })();
   </script>
-  <script src="/static/markdown.js?v=24"></script>
-  <script src="/static/app.js?v=24"></script>
+  <script src="/static/markdown.js?v=26"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+  <script src="/static/app.js?v=26"></script>
   <!-- Optional enhancements (graphs + motion) — deferred so boot is never blocked -->
   <script defer src="https://cdn.jsdelivr.net/npm/gsap@3.12.7/dist/gsap.min.js"></script>
   <script defer src="https://cdn.jsdelivr.net/npm/gsap@3.12.7/dist/ScrollTrigger.min.js"></script>

@@ -1,6 +1,8 @@
-/** Lightweight Markdown render + sanitize for Nawab OS chat and file viewer. */
+/** Markdown + Mermaid rendering for Nawab OS chat, history, and file viewer. */
 (function (global) {
   "use strict";
+
+  let mermaidReady = false;
 
   function escapeHtml(s) {
     return String(s ?? "")
@@ -32,6 +34,7 @@
     const lines = src.replace(/\r\n/g, "\n").split("\n");
     const html = [];
     let inCode = false;
+    let codeLang = "";
     let codeBuf = [];
     let listType = null;
 
@@ -44,18 +47,28 @@
 
     function flushCode() {
       if (!inCode) return;
-      html.push(`<pre class="md-pre"><code>${escapeHtml(codeBuf.join("\n"))}</code></pre>`);
+      const body = codeBuf.join("\n");
+      if (codeLang === "mermaid") {
+        html.push(`<div class="mermaid">${escapeHtml(body)}</div>`);
+      } else {
+        html.push(`<pre class="md-pre"><code>${escapeHtml(body)}</code></pre>`);
+      }
       codeBuf = [];
+      codeLang = "";
       inCode = false;
     }
 
     for (const raw of lines) {
       const line = raw;
+      const fence = line.trim().match(/^```(\w*)$/);
 
-      if (line.trim().startsWith("```")) {
+      if (fence) {
         flushList();
         if (inCode) flushCode();
-        else inCode = true;
+        else {
+          inCode = true;
+          codeLang = (fence[1] || "").toLowerCase();
+        }
         continue;
       }
       if (inCode) {
@@ -108,5 +121,32 @@
     return html.filter(Boolean).join("\n");
   }
 
-  global.FOSMarkdown = { render: renderMarkdown, escapeHtml };
+  async function ensureMermaid() {
+    if (!global.mermaid) return false;
+    if (!mermaidReady) {
+      global.mermaid.initialize({
+        startOnLoad: false,
+        theme: "neutral",
+        securityLevel: "loose",
+        fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif",
+      });
+      mermaidReady = true;
+    }
+    return true;
+  }
+
+  async function enhance(root) {
+    const scope = root && root.querySelectorAll ? root : document;
+    const nodes = scope.querySelectorAll(".mermaid:not([data-processed])");
+    if (!nodes.length) return;
+    if (!(await ensureMermaid())) return;
+    try {
+      await global.mermaid.run({ nodes: [...nodes] });
+      nodes.forEach(n => n.setAttribute("data-processed", "1"));
+    } catch (e) {
+      console.warn("[markdown] mermaid render failed", e);
+    }
+  }
+
+  global.FOSMarkdown = { render: renderMarkdown, escapeHtml, enhance };
 })(window);

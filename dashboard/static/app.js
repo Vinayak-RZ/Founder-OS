@@ -121,8 +121,7 @@ function renderMessageHtml(m) {
 function renderArtifactLinks(artifacts) {
   if (!artifacts?.length) return "";
   return `<div class="msg-artifacts">${artifacts.map(a =>
-    `<button type="button" class="button-outline-on-dark button-sm md-artifact-btn" data-md-artifact="${a.id}">${esc(a.title || a.kind || "File")}</button>
-     <a class="button-tertiary-text button-sm" href="${esc(a.download_url || `/api/artifacts/${a.id}/file`)}" target="_blank" rel="noopener">Download</a>`
+    `<button type="button" class="button-outline-on-dark button-sm md-artifact-btn" data-md-artifact="${a.id}">${esc(a.title || a.kind || "File")}</button>`
   ).join("")}</div>`;
 }
 
@@ -141,17 +140,17 @@ function renderChatSessionsList() {
   const sessions = state._chatSessions || [];
   const active = chatSessionId();
   const items = sessions.map(s => `
-    <button type="button" class="chat-session-item${s.id === active ? " is-active" : ""}" data-chat-session="${esc(s.id)}">
-      <span class="chat-session-item__title">${esc(s.title || "Conversation")}</span>
-      <span class="chat-session-item__meta muted">${fmtHistoryTime(s.updated_at)}</span>
+    <button type="button" class="chat-session-chip${s.id === active ? " is-active" : ""}" data-chat-session="${esc(s.id)}">
+      <span class="chat-session-chip__title">${esc(s.title || "Conversation")}</span>
+      <span class="chat-session-chip__meta">${fmtHistoryTime(s.updated_at)}</span>
     </button>`).join("");
-  return `<aside class="chat-sessions driver-card">
-    <div class="chat-sessions__head">
+  return `<section class="chat-sessions-strip driver-card">
+    <div class="chat-sessions-strip__head">
       <p class="caption-uppercase">Chats</p>
       <button type="button" class="button-primary button-sm" data-new-chat-session>+ New</button>
     </div>
-    <div class="chat-sessions__list">${items || "<p class='muted body-md'>No chats yet</p>"}</div>
-  </aside>`;
+    <div class="chat-sessions-strip__list">${items || "<span class='muted body-md'>No previous chats</span>"}</div>
+  </section>`;
 }
 
 let mdEditorState = { artifactId: null, editMode: false };
@@ -164,9 +163,11 @@ async function openMdEditor(artifactId) {
     mdEditorState = { artifactId, editMode: false };
     $("#md-dialog-title").textContent = data.title || "Markdown";
     $("#md-dialog-source").value = data.content || "";
-    $("#md-dialog-preview").innerHTML = window.FOSMarkdown?.render?.(data.content) || esc(data.content);
+    const prev = $("#md-dialog-preview");
+    prev.innerHTML = window.FOSMarkdown?.render?.(data.content) || esc(data.content);
+    window.FOSMarkdown?.enhance?.(prev);
     $("#md-dialog-source").hidden = true;
-    $("#md-dialog-preview").hidden = false;
+    prev.hidden = false;
     $("#md-dialog-save").hidden = true;
     $("#md-dialog-mode").textContent = "Edit";
     dlg.showModal();
@@ -183,7 +184,9 @@ async function saveMdEditor() {
     body: JSON.stringify({ content }),
     timeoutMs: 15000,
   });
-  $("#md-dialog-preview").innerHTML = window.FOSMarkdown?.render?.(content) || esc(content);
+  const prev = $("#md-dialog-preview");
+  prev.innerHTML = window.FOSMarkdown?.render?.(content) || esc(content);
+  window.FOSMarkdown?.enhance?.(prev);
   mdEditorState.editMode = false;
   $("#md-dialog-source").hidden = true;
   $("#md-dialog-preview").hidden = false;
@@ -205,6 +208,7 @@ function initMdEditorDialog() {
     } else {
       const content = src?.value ?? "";
       prev.innerHTML = window.FOSMarkdown?.render?.(content) || esc(content);
+      window.FOSMarkdown?.enhance?.(prev);
       src.hidden = true;
       prev.hidden = false;
       $("#md-dialog-save").hidden = true;
@@ -245,6 +249,7 @@ function patchChatJobBubble(job) {
   const el = $("#chat-messages");
   if (el && currentView === "chat") {
     el.innerHTML = renderChatMessagesInner();
+    window.FOSMarkdown?.enhance?.(el);
     el.scrollTop = el.scrollHeight;
   }
   updateLiveStrip({ active: job.status === "running", phase: job.phase });
@@ -308,6 +313,7 @@ async function cancelActiveJob(jobId) {
 
 let chatHistory = readJsonStorage("fos_chat", []);
 let historyTab = localStorage.getItem("fos_history_tab") || "conversations";
+if (historyTab === "artifacts") historyTab = "documents";
 let livePollTimer = null;
 let memoryGraphTab = "graph";
 let worldGraphTab = "hierarchy";
@@ -2254,9 +2260,8 @@ function renderChat() {
         <button type="button" class="button-outline-on-dark button-sm" data-goto="agents">Change specialist</button>
       </div>
     </header>
-    <div class="chat-layout chat-layout--sessions">
-      ${renderChatSessionsList()}
-      <div class="chat-layout chat-layout--rich">
+    ${renderChatSessionsList()}
+    <div class="chat-layout chat-layout--rich">
       <div class="chat-wrap">
         <div class="chat-messages${empty ? " is-empty" : ""}" id="chat-messages">
           ${empty ? `<div class="chat-empty">
@@ -2302,7 +2307,6 @@ function renderChat() {
           ).join("")}</div>
         </section>` : ""}
       </aside>
-      </div>
     </div>
   </div>`;
 }
@@ -2531,6 +2535,15 @@ function fmtHistoryTime(ts) {
   return d.toLocaleString();
 }
 
+function renderHistoryMessageContent(m) {
+  const content = m.content || "";
+  if (m.role === "agent" || m.role === "assistant") {
+    const md = window.FOSMarkdown?.render?.(content) || esc(content);
+    return `<div class="msg-md history-msg__body">${md}</div>`;
+  }
+  return `<p class="body-md history-msg__body">${esc(content)}</p>`;
+}
+
 function renderHistory() {
   const hist = state._history || {};
   const sessions = hist.sessions || [];
@@ -2543,12 +2556,12 @@ function renderHistory() {
       <span class="history-session__meta muted">${esc(s.specialist || "supervisor")} · ${s.message_count || 0} msgs · ${fmtHistoryTime(s.updated_at)}</span>
     </button>`).join("") : "<p class='body-md muted'>No conversations yet. Ask the agent something to start a session.</p>";
 
-  let detailHtml = "<p class='body-md muted'>Select a conversation to view messages, runs, and linked artifacts.</p>";
+  let detailHtml = "<p class='body-md muted'>Select a conversation to view messages, runs, and linked documents.</p>";
   if (selected?.messages?.length) {
     const msgs = selected.messages.map(m => `
       <div class="history-msg history-msg--${esc(m.role)}">
         <span class="caption-uppercase">${esc(m.role)}</span>
-        <p class="body-md">${esc(m.content)}</p>
+        ${renderHistoryMessageContent(m)}
         <span class="muted" style="font-size:11px">${fmtHistoryTime(m.created_at)}</span>
       </div>`).join("");
     const runs = (selected.runs || []).map(r => `
@@ -2558,13 +2571,13 @@ function renderHistory() {
           <span class="muted">${r.duration_s || 0}s</span>
         </div>
         ${renderLiveFlow((r.tools || []).map(t => ({ name: t.name, decision: t.decision, t: t.t })), "No tools")}
-        ${r.assistant_reply ? `<p class="world-meta">→ ${esc(r.assistant_reply)}</p>` : ""}
+        ${r.assistant_reply ? `<div class="history-run__reply msg-md">${window.FOSMarkdown?.render?.(r.assistant_reply) || esc(r.assistant_reply)}</div>` : ""}
       </article>`).join("") || "";
     const arts = (selected.artifacts || []).map(a => `
-      <a class="history-artifact" href="${esc(a.download_url || `/api/artifacts/${a.id}/file`)}" target="_blank" rel="noopener">
+      <button type="button" class="history-doc-btn" data-md-artifact="${a.id}">
         <span class="badge-pill">${esc(a.kind)}</span>
         <span>${esc(a.title)}</span>
-      </a>`).join("") || "<p class='muted'>No artifacts in this session.</p>";
+      </button>`).join("") || "<p class='muted'>No documents in this session.</p>";
     detailHtml = `
       <div class="history-detail__actions">
         <button type="button" class="button-primary button-sm" data-open-chat-session="${esc(selected.id)}">Open in chat</button>
@@ -2573,37 +2586,37 @@ function renderHistory() {
       <p class="caption-uppercase" style="margin-top:var(--space-sm)">Messages</p>
       <div class="history-messages">${msgs}</div>
       ${runs ? `<p class="caption-uppercase" style="margin-top:var(--space-md)">Runs</p>${runs}` : ""}
-      <p class="caption-uppercase" style="margin-top:var(--space-md)">Artifacts</p>
+      <p class="caption-uppercase" style="margin-top:var(--space-md)">Documents</p>
       <div class="history-artifacts">${arts}</div>`;
   }
 
-  const artifactsHtml = artifacts.length ? artifacts.map(a => `
-    <article class="history-artifact-card">
-      <div class="history-artifact-card__head">
+  const documentsHtml = artifacts.length ? artifacts.map(a => `
+    <article class="history-doc-card" tabindex="0" data-md-artifact="${a.id}">
+      <div class="history-doc-card__head">
         <span class="badge-pill">${esc(a.kind)}</span>
         <span class="muted">${fmtHistoryTime(a.created_at)}</span>
       </div>
       <h3 class="title-sm">${esc(a.title || "Untitled")}</h3>
       ${a.run_id ? `<p class="world-meta">Run ${esc(a.run_id)}</p>` : ""}
-      <a class="button-outline-on-dark button-sm" href="${esc(a.download_url || `/api/artifacts/${a.id}/file`)}" target="_blank" rel="noopener">Download</a>
-    </article>`).join("") : "<p class='body-md muted'>No agent artifacts yet. Documents and charts created by agents appear here.</p>";
+      <span class="history-doc-card__open">Open in workspace</span>
+    </article>`).join("") : "<p class='body-md muted'>No agent documents yet. Markdown files and charts created by agents appear here.</p>";
 
   return `
     <header class="driver-card history-header">
       <div>
         <p class="section-eyebrow">Agent ledger</p>
         <h2 class="title-md">History</h2>
-        <p class="body-md muted">Persistent conversations, runs, and files created by agents.</p>
+        <p class="body-md muted">Persistent conversations, runs, and documents created by agents.</p>
       </div>
     </header>
     <div class="graph-tabs">
       <button type="button" class="graph-tab ${tab === "conversations" ? "is-active" : ""}" data-history-tab="conversations">Conversations</button>
-      <button type="button" class="graph-tab ${tab === "artifacts" ? "is-active" : ""}" data-history-tab="artifacts">Artifacts</button>
+      <button type="button" class="graph-tab ${tab === "documents" ? "is-active" : ""}" data-history-tab="documents">Documents</button>
     </div>
     ${tab === "conversations" ? `<div class="history-layout">
       <section class="driver-card history-sessions">${sessionsHtml}</section>
       <section class="driver-card history-detail">${detailHtml}</section>
-    </div>` : `<section class="driver-card history-artifacts-grid">${artifactsHtml}</section>`}`;
+    </div>` : `<section class="driver-card history-documents-grid">${documentsHtml}</section>`}`;
 }
 
 function infraKvRow(label, value, mono = false) {
@@ -2914,6 +2927,7 @@ function afterRender(opts = {}) {
     FOSMotion?.runView?.(currentView);
   }
   FOSMotion?.ensureContentVisible?.();
+  window.FOSMarkdown?.enhance?.(document.getElementById("content"));
 }
 
 function animateLatestChatMessage() {
@@ -3746,6 +3760,26 @@ function renderNotifications() {
 
 $$(".nav button").forEach(b => b.addEventListener("click", () => goView(b.dataset.view)));
 $("#btn-sidebar-open")?.addEventListener("click", openSidebar);
+
+function initSidebarCollapse() {
+  const app = document.querySelector(".app");
+  const btn = $("#btn-sidebar-collapse");
+  const key = "fos_sidebar_collapsed";
+  if (localStorage.getItem(key) === "1") app?.classList.add("sidebar-collapsed");
+  const syncLabel = () => {
+    const collapsed = app?.classList.contains("sidebar-collapsed");
+    btn?.setAttribute("aria-label", collapsed ? "Expand sidebar" : "Collapse sidebar");
+    btn?.setAttribute("title", collapsed ? "Expand sidebar" : "Collapse sidebar");
+  };
+  syncLabel();
+  btn?.addEventListener("click", () => {
+    app?.classList.toggle("sidebar-collapsed");
+    localStorage.setItem(key, app?.classList.contains("sidebar-collapsed") ? "1" : "0");
+    syncLabel();
+  });
+}
+
+initSidebarCollapse();
 $("#sidebar-close")?.addEventListener("click", closeMobileShell);
 $("#sidebar-backdrop")?.addEventListener("click", closeMobileShell);
 document.querySelectorAll(".mobile-tab").forEach(tab => {
