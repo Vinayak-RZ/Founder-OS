@@ -6,13 +6,68 @@
   extend it. It is intentionally exhaustive.
 -->
 
+<p align="center">
+  <img src="docs/logo.svg" alt="Nawab OS" width="340" />
+</p>
+
+<h3 align="center">Personal Operator Console &amp; Aggregator Hub</h3>
+
+<p align="center">
+  A <strong>web-first command console</strong> for running parallel founder threads — companies, side projects,
+  research, outreach, CRM, goals, and linked documentation — in one place.<br/>
+  <a href="https://nawab-os.stamped.work"><strong>Live · nawab-os.stamped.work</strong></a>
+  &nbsp;·&nbsp; Local default <code>http://127.0.0.1:8787</code>
+</p>
+
+---
+
+## Product tour
+
+<table>
+  <tr>
+    <td width="50%" align="center">
+      <a href="docs/screenshots/control-center.png"><img src="docs/screenshots/control-center.png" alt="Control center dashboard" width="100%" /></a><br/>
+      <sub><strong>Control center</strong> — direct actions, live operation graph, world state</sub>
+    </td>
+    <td width="50%" align="center">
+      <a href="docs/screenshots/worlds-map.png"><img src="docs/screenshots/worlds-map.png" alt="Worlds hierarchy and map" width="100%" /></a><br/>
+      <sub><strong>Worlds</strong> — hierarchy, ecosystem map, file graph, inspector</sub>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" align="center">
+      <a href="docs/screenshots/worlds-vault.png"><img src="docs/screenshots/worlds-vault.png" alt="Knowledge vault and GitHub sync" width="100%" /></a><br/>
+      <sub><strong>Knowledge vault</strong> — registry, facets, GitHub → S3 sync</sub>
+    </td>
+    <td width="50%" align="center">
+      <a href="docs/screenshots/agent-fleet.png"><img src="docs/screenshots/agent-fleet.png" alt="Agent fleet console" width="100%" /></a><br/>
+      <sub><strong>Agent fleet</strong> — supervisor routing &amp; specialists</sub>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" align="center">
+      <a href="docs/screenshots/ask-agent.png"><img src="docs/screenshots/ask-agent.png" alt="Ask agent chat" width="100%" /></a><br/>
+      <sub><strong>Ask agent</strong> — optional chat with live operation panel</sub>
+    </td>
+    <td width="50%" align="center">
+      <a href="docs/screenshots/activity.png"><img src="docs/screenshots/activity.png" alt="Activity and notifications" width="100%" /></a><br/>
+      <sub><strong>Activity</strong> — decision flow &amp; notifications</sub>
+    </td>
+  </tr>
+  <tr>
+    <td align="center" colspan="2">
+      <a href="docs/screenshots/goals.png"><img src="docs/screenshots/goals.png" alt="Goals and tasks" width="520" /></a><br/>
+      <sub><strong>Goals &amp; tasks</strong> — outcomes, reminders, open work</sub>
+    </td>
+  </tr>
+</table>
+
+---
+
 # Nawab OS — Personal Operator Console & Aggregator Hub
 
-> A **personal, web-first command console** for running parallel founder threads — companies,
-> side projects, research ideas, outreach, CRM, goals, and linked documentation — in one place.
-> **Deep work stays elsewhere** (Cursor, Claude, your repos); Nawab OS **coordinates**,
-> **tracks**, **ingests**, and lets you **query** what you produce through worlds, a knowledge
-> vault, and a small specialist agent fleet.
+> Deep work stays elsewhere (Cursor, Claude, your repos). **Nawab OS coordinates, tracks, ingests,**
+> and lets you **query** what you produce through worlds, a knowledge vault, and a specialist agent fleet.
 
 Nawab OS is **not** a replacement for long research or coding sessions. It is an
 **aggregator and operator console**: you drive worlds, CRM, and goals directly in the UI;
