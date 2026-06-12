@@ -61,6 +61,8 @@ class Config:
     github_redirect_uri: str
     public_base_url: str
     behind_proxy: bool
+    dashboard_pin: str
+    flask_secret_key: str
 
 def _truthy(val: str, default: bool = False) -> bool:
     if val is None or val == "":
@@ -148,6 +150,8 @@ def load_config() -> Config:
         github_token_path=os.getenv("GITHUB_TOKEN_PATH", "./data/github_token.json"),
         public_base_url=os.getenv("PUBLIC_BASE_URL", "").strip().rstrip("/"),
         behind_proxy=_truthy(os.getenv("BEHIND_PROXY"), default=False),
+        dashboard_pin=os.getenv("DASHBOARD_PIN", "").strip(),
+        flask_secret_key=os.getenv("FLASK_SECRET_KEY", "").strip() or "dev-change-me",
         github_redirect_uri=os.getenv("GITHUB_REDIRECT_URI", "").strip()
         or (
             f"{os.getenv('PUBLIC_BASE_URL', '').strip().rstrip('/')}/api/github/callback"

@@ -82,8 +82,12 @@ const CRM_STATUSES = ["prospect", "contacted", "replied", "meeting", "won", "los
 const CHART_COLORS = ["#f75440", "#00666b", "#03904a", "#051f13", "#5a403c", "#8f706b", "#e3beb8"];
 
 async function apiUpload(path, formData, method = "POST") {
-  const r = await fetch("/api" + path, { method, body: formData });
+  const r = await fetch("/api" + path, { method, body: formData, credentials: "same-origin" });
   const data = await r.json().catch(() => ({}));
+  if (r.status === 401 && data.pin_required) {
+    showPinGate();
+    throw new Error("Enter your PIN to continue");
+  }
   if (!r.ok) throw new Error(data.error || r.statusText);
   return data;
 }
@@ -96,10 +100,15 @@ async function api(path, opts = {}) {
   try {
     const r = await fetch("/api" + path, {
       ...fetchOpts,
+      credentials: "same-origin",
       headers: { "Content-Type": "application/json", ...(headers || {}) },
       signal: signal || ctrl.signal,
     });
     const data = await r.json().catch(() => ({}));
+    if (r.status === 401 && data.pin_required) {
+      showPinGate();
+      throw new Error("Enter your PIN to continue");
+    }
     if (!r.ok) throw new Error(data.error || r.statusText);
     return data;
   } catch (e) {
@@ -2784,6 +2793,87 @@ async function loadBootExtras() {
   render();
 }
 
+function showPinGate(message, lockedSeconds) {
+  const gate = $("#pin-gate");
+  const app = document.querySelector(".app");
+  const err = $("#pin-error");
+  const input = $("#pin-input");
+  if (gate) {
+    gate.hidden = false;
+    gate.classList.add("is-visible");
+  }
+  if (app) app.setAttribute("inert", "");
+  if (err) {
+    if (message) {
+      err.textContent = message;
+      err.hidden = false;
+    } else {
+      err.hidden = true;
+      err.textContent = "";
+    }
+  }
+  if (input && !lockedSeconds) {
+    input.disabled = false;
+    input.focus();
+  }
+  if (input && lockedSeconds) {
+    input.disabled = true;
+    if (err) {
+      err.textContent = `Too many attempts. Wait ${lockedSeconds}s.`;
+      err.hidden = false;
+    }
+  }
+  setConnectionStatus("Locked", "paused");
+}
+
+function hidePinGate() {
+  const gate = $("#pin-gate");
+  const app = document.querySelector(".app");
+  if (gate) {
+    gate.hidden = true;
+    gate.classList.remove("is-visible");
+  }
+  if (app) app.removeAttribute("inert");
+}
+
+async function fetchAuthStatus() {
+  const r = await fetch("/api/auth/status", { credentials: "same-origin", headers: { Accept: "application/json" } });
+  return r.json();
+}
+
+function bindPinGate() {
+  $("#pin-form")?.addEventListener("submit", async e => {
+    e.preventDefault();
+    const pin = ($("#pin-input")?.value || "").trim();
+    const err = $("#pin-error");
+    if (!/^\d{6}$/.test(pin)) {
+      if (err) { err.textContent = "Enter exactly 6 digits"; err.hidden = false; }
+      return;
+    }
+    try {
+      const res = await fetch("/api/auth/pin", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ pin }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || "Incorrect PIN");
+      hidePinGate();
+      $("#pin-input").value = "";
+      if (err) err.hidden = true;
+      await startApp();
+    } catch (ex) {
+      if (err) { err.textContent = ex.message; err.hidden = false; }
+      const st = await fetchAuthStatus().catch(() => ({}));
+      if (st.locked_seconds) showPinGate(ex.message, st.locked_seconds);
+    }
+  });
+  $("#pin-input")?.addEventListener("input", e => {
+    e.target.value = e.target.value.replace(/\D/g, "").slice(0, 6);
+  });
+}
+
 function applyBootUrlParams() {
   const p = new URLSearchParams(location.search);
   const view = p.get("view");
@@ -2800,7 +2890,7 @@ function applyBootUrlParams() {
   }
 }
 
-async function boot() {
+async function startApp() {
   try {
     await refresh();
   } catch (e) {
@@ -2819,6 +2909,25 @@ async function boot() {
   } catch (e) {
     console.error("boot extras failed:", e);
   }
+}
+
+async function boot() {
+  bindPinGate();
+  let auth = window.__FOS_AUTH;
+  if (!auth) {
+    try {
+      auth = await fetchAuthStatus();
+    } catch (e) {
+      showBootError(e);
+      return;
+    }
+  }
+  if (auth.pin_required && !auth.authenticated) {
+    showPinGate(null, auth.locked_seconds || 0);
+    return;
+  }
+  hidePinGate();
+  await startApp();
 }
 
 boot();

@@ -2509,6 +2509,52 @@ td {
   justify-content: space-between;
 }
 
+/* PIN gate */
+
+.pin-gate {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-md);
+  background: rgba(5, 31, 19, 0.92);
+  backdrop-filter: blur(8px);
+}
+
+.pin-gate[hidden]:not(.is-visible) {
+  display: none;
+}
+
+.pin-gate__card {
+  width: min(100%, 22rem);
+  padding: var(--space-lg);
+  text-align: center;
+}
+
+.pin-gate__form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  margin-top: var(--space-md);
+}
+
+.pin-gate__input {
+  font-size: 1.75rem;
+  letter-spacing: 0.35em;
+  text-align: center;
+  font-family: var(--font-mono, monospace);
+}
+
+.pin-gate__error {
+  color: var(--color-accent, #f75440);
+}
+
+.pin-gate__submit {
+  width: 100%;
+}
+
 /* Human-first operator UI */
 
 .operator-panel {

@@ -32,9 +32,9 @@ Browser (any device)
 1. **AWS account** with permissions to create EC2, S3, IAM roles, security groups.
 2. **Qdrant Cloud** cluster — [cloud.qdrant.io](https://cloud.qdrant.io) — URL + API key.
 3. **LLM API key** — Groq, Gemini, or OpenAI (at least one).
-4. **Domain name** (recommended) — required for HTTPS and GitHub OAuth in production.
-   - Point an A record at your EC2 elastic IP.
-5. **GitHub OAuth App** (optional) — callback `https://YOUR_DOMAIN/api/github/callback`.
+4. **Domain on Cloudflare** — point an A record at your EC2 Elastic IP. See [`cloudflare.md`](cloudflare.md).
+5. **6-digit PIN** — set `DASHBOARD_PIN` in env so only you can open the UI.
+6. **GitHub OAuth App** (optional) — callback `https://YOUR_DOMAIN/api/github/callback`.
 
 ## 1. Create S3 bucket
 

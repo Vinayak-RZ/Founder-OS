@@ -10,12 +10,24 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Plus+Jakarta+Sans:wght@600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/static/tokens.css?v=10">
-  <link rel="stylesheet" href="/static/components.css?v=10">
-  <link rel="stylesheet" href="/static/app.css?v=10">
-  <link rel="stylesheet" href="/static/mobile.css?v=10">
+  <link rel="stylesheet" href="/static/tokens.css?v=11">
+  <link rel="stylesheet" href="/static/components.css?v=11">
+  <link rel="stylesheet" href="/static/app.css?v=11">
+  <link rel="stylesheet" href="/static/mobile.css?v=11">
 </head>
 <body>
+  <div id="pin-gate" class="pin-gate" hidden>
+    <div class="pin-gate__card driver-card">
+      <p class="section-eyebrow">Founder OS</p>
+      <h1 class="title-md">Enter your PIN</h1>
+      <p class="body-md muted">6-digit access code required to open your console.</p>
+      <form id="pin-form" class="pin-gate__form" autocomplete="off">
+        <input type="password" id="pin-input" class="pin-gate__input text-input-on-dark" inputmode="numeric" pattern="[0-9]*" maxlength="6" placeholder="••••••" aria-label="6-digit PIN" required>
+        <p id="pin-error" class="pin-gate__error body-md" hidden></p>
+        <button type="submit" class="button-primary pin-gate__submit">Unlock</button>
+      </form>
+    </div>
+  </div>
   <a class="skip-link" href="#main-content">Skip to content</a>
   <div class="sidebar-backdrop" id="sidebar-backdrop" hidden aria-hidden="true"></div>
   <div class="app">
@@ -163,8 +175,8 @@
   </dialog>
 
   <!-- Core UI first — must not depend on CDN (blocked CDN was preventing app.js from ever running) -->
-  <script src="/static/charts.js?v=10"></script>
-  <script src="/static/nav-icons.js?v=10"></script>
+  <script src="/static/charts.js?v=11"></script>
+  <script src="/static/nav-icons.js?v=11"></script>
   <script>
     (function () {
       function setStatus(msg, ok) {
@@ -179,25 +191,30 @@
           el.classList.toggle("paused", !ok);
         });
       }
-      fetch("/api/state", { headers: { Accept: "application/json" } })
-        .then(function (r) {
-          if (!r.ok) throw new Error("HTTP " + r.status);
-          return r.json();
+      fetch("/api/auth/status", { credentials: "same-origin", headers: { Accept: "application/json" } })
+        .then(function (r) { return r.json(); })
+        .then(function (st) {
+          window.__FOS_AUTH = st;
+          if (st.pin_required && !st.authenticated) {
+            setStatus("Locked", false);
+            return;
+          }
+          setStatus("Online", true);
+          window.__FOS_API_OK = true;
         })
-        .then(function () { setStatus("Online", true); window.__FOS_API_OK = true; })
         .catch(function (e) {
           console.error("[preflight]", e);
           setStatus("Offline", false);
         });
     })();
   </script>
-  <script src="/static/app.js?v=10"></script>
+  <script src="/static/app.js?v=11"></script>
   <!-- Optional enhancements (graphs + motion) — deferred so boot is never blocked -->
   <script defer src="https://cdn.jsdelivr.net/npm/gsap@3.12.7/dist/gsap.min.js"></script>
   <script defer src="https://cdn.jsdelivr.net/npm/gsap@3.12.7/dist/ScrollTrigger.min.js"></script>
   <script defer src="https://cdn.jsdelivr.net/npm/cytoscape@3.30.2/dist/cytoscape.min.js"></script>
-  <script defer src="/static/graph-viz.js?v=10"></script>
-  <script defer src="/static/motion.js?v=10"></script>
-  <script defer src="/static/enhance.js?v=10"></script>
+  <script defer src="/static/graph-viz.js?v=11"></script>
+  <script defer src="/static/motion.js?v=11"></script>
+  <script defer src="/static/enhance.js?v=11"></script>
 </body>
 </html>
