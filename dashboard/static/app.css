@@ -3065,6 +3065,35 @@ td {
 .panel-loading {
   min-height: 0;
 }
+
+.vault-registry-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-xs) var(--space-sm);
+  margin: var(--space-sm) 0;
+  padding: var(--space-xs) var(--space-sm);
+  border: 1px solid var(--color-hairline);
+  border-radius: var(--rounded-md);
+  background: var(--color-surface-low);
+  font-size: var(--text-sm);
+}
+
+.vault-registry-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.vault-registry-chip .k {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-muted);
+}
+
+.knowledge-panel .vault-facet-tabs {
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-xxs);
