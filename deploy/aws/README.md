@@ -149,6 +149,10 @@ Open `https://your-domain.com` from any device.
 
 ## Updates
 
+**Automatic (recommended):** push to `main` — GitHub Actions runs tests and deploys via SSH. See [DEPLOY.md](DEPLOY.md) for secrets setup.
+
+**Manual:**
+
 ```bash
 cd /opt/founder-os
 sudo bash deploy/aws/update.sh
