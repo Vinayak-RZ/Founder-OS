@@ -10,10 +10,10 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Plus+Jakarta+Sans:wght@600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/static/tokens.css">
-  <link rel="stylesheet" href="/static/components.css">
-  <link rel="stylesheet" href="/static/app.css">
-  <link rel="stylesheet" href="/static/mobile.css">
+  <link rel="stylesheet" href="/static/tokens.css?v=3">
+  <link rel="stylesheet" href="/static/components.css?v=3">
+  <link rel="stylesheet" href="/static/app.css?v=3">
+  <link rel="stylesheet" href="/static/mobile.css?v=3">
 </head>
 <body>
   <a class="skip-link" href="#main-content">Skip to content</a>
@@ -162,13 +162,42 @@
     <div id="notif-list" class="drawer-body"></div>
   </dialog>
 
-  <script src="https://cdn.jsdelivr.net/npm/gsap@3.12.7/dist/gsap.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/gsap@3.12.7/dist/ScrollTrigger.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/cytoscape@3.30.2/dist/cytoscape.min.js"></script>
-  <script src="/static/charts.js"></script>
-  <script src="/static/graph-viz.js"></script>
-  <script src="/static/motion.js"></script>
-  <script src="/static/nav-icons.js"></script>
-  <script src="/static/app.js"></script>
+  <!-- Core UI first — must not depend on CDN (blocked CDN was preventing app.js from ever running) -->
+  <script src="/static/charts.js?v=3"></script>
+  <script src="/static/nav-icons.js?v=3"></script>
+  <script>
+    (function () {
+      function setStatus(msg, ok) {
+        ["status-text", "mobile-status-text"].forEach(function (id) {
+          var el = document.getElementById(id);
+          if (el) el.textContent = msg;
+        });
+        ["status-dot", "mobile-status-dot"].forEach(function (id) {
+          var el = document.getElementById(id);
+          if (!el) return;
+          el.classList.toggle("ok", ok);
+          el.classList.toggle("paused", !ok);
+        });
+      }
+      fetch("/api/state", { headers: { Accept: "application/json" } })
+        .then(function (r) {
+          if (!r.ok) throw new Error("HTTP " + r.status);
+          return r.json();
+        })
+        .then(function () { setStatus("Online", true); window.__FOS_API_OK = true; })
+        .catch(function (e) {
+          console.error("[preflight]", e);
+          setStatus("Offline", false);
+        });
+    })();
+  </script>
+  <script src="/static/app.js?v=3"></script>
+  <!-- Optional enhancements (graphs + motion) — deferred so boot is never blocked -->
+  <script defer src="https://cdn.jsdelivr.net/npm/gsap@3.12.7/dist/gsap.min.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/gsap@3.12.7/dist/ScrollTrigger.min.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/cytoscape@3.30.2/dist/cytoscape.min.js"></script>
+  <script defer src="/static/graph-viz.js?v=3"></script>
+  <script defer src="/static/motion.js?v=3"></script>
+  <script defer src="/static/enhance.js?v=3"></script>
 </body>
 </html>

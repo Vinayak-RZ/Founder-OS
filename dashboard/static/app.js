@@ -61,11 +61,12 @@ async function api(path, opts = {}) {
   const ctrl = new AbortController();
   const ms = opts.timeoutMs ?? 30000;
   const timer = setTimeout(() => ctrl.abort(), ms);
+  const { timeoutMs: _t, headers, signal, ...fetchOpts } = opts;
   try {
     const r = await fetch("/api" + path, {
-      headers: { "Content-Type": "application/json", ...opts.headers },
-      ...opts,
-      signal: opts.signal || ctrl.signal,
+      ...fetchOpts,
+      headers: { "Content-Type": "application/json", ...(headers || {}) },
+      signal: signal || ctrl.signal,
     });
     const data = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(data.error || r.statusText);
@@ -479,6 +480,7 @@ function selectedAgentMeta(agents) {
 }
 
 function drawGraphs() {
+  if (!window.FOSGraph) return;
   if (currentView === "dashboard" && state._runtimeGraph) {
     FOSGraph.render("graph-runtime-dash", state._runtimeGraph, { layout: { name: "breadthfirst", directed: true, padding: 20 } });
   }
@@ -502,7 +504,7 @@ function drawGraphs() {
           if (d.world_id) selectInspectorWorld(d.world_id);
         },
       });
-      FOSGraph.highlightWorld("graph-world", inspectorWorldId(), currentWorldId());
+      window.FOSGraph?.highlightWorld("graph-world", inspectorWorldId(), currentWorldId());
     }
   }
   if (currentView === "memory" && state._memoryGraph) {
@@ -580,13 +582,15 @@ async function pollLive() {
     patchLiveUI(live);
     if (["dashboard", "agents", "chat"].includes(currentView)) {
       state._runtimeGraph = await api("/graph/runtime").catch(() => state._runtimeGraph);
-      if (currentView === "dashboard") FOSGraph.update("graph-runtime-dash", state._runtimeGraph);
-      if (currentView === "agents") {
-        const el = state.agentsTab === "live" ? "graph-runtime-agents-tab" : null;
-        if (el && document.getElementById(el)) FOSGraph.update(el, state._runtimeGraph);
-      }
-      if (currentView === "chat" && document.getElementById("graph-runtime-chat")) {
-        FOSGraph.update("graph-runtime-chat", state._runtimeGraph);
+      if (window.FOSGraph) {
+        if (currentView === "dashboard") FOSGraph.update("graph-runtime-dash", state._runtimeGraph);
+        if (currentView === "agents") {
+          const el = state.agentsTab === "live" ? "graph-runtime-agents-tab" : null;
+          if (el && document.getElementById(el)) FOSGraph.update(el, state._runtimeGraph);
+        }
+        if (currentView === "chat" && document.getElementById("graph-runtime-chat")) {
+          FOSGraph.update("graph-runtime-chat", state._runtimeGraph);
+        }
       }
     }
   } catch (_) { /* ignore */ }
@@ -848,7 +852,7 @@ function selectInspectorWorld(id) {
     loadWorldVault(id).then(() => {
       render();
       FOSMotion?.flashElement?.($("#world-inspector"));
-      FOSGraph.highlightWorld("graph-world", inspectorWorldId(), currentWorldId());
+      window.FOSGraph?.highlightWorld("graph-world", inspectorWorldId(), currentWorldId());
     });
   }
 }
@@ -2026,8 +2030,10 @@ $("#world-select")?.addEventListener("change", e => {
   if (currentView === "world" || currentView === "chat" || currentView === "agents") render();
 });
 
-FOSMotion?.init?.();
-FOSMotion?.runShell?.();
+window.addEventListener("error", (e) => {
+  console.error("UI error:", e.error || e.message);
+  if (!state?.config?.my_name) setConnectionStatus("UI error — hard refresh", "paused");
+});
 
 async function boot() {
   try {
