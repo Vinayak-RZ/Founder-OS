@@ -66,6 +66,45 @@ let livePollTimer = null;
 let memoryGraphTab = "graph";
 let worldGraphTab = "hierarchy";
 let lastLiveActive = false;
+let viewDataLoadGen = 0;
+const graphDrawCache = {};
+
+function clearVaultScopedState() {
+  state._worldVault = null;
+  state._vaultGraph = null;
+  state._vaultWorldId = null;
+  state._vaultLoading = false;
+}
+
+function vaultPayload() {
+  return state._worldVault?.vault || state._worldVault || null;
+}
+
+function vaultReadyFor(worldId) {
+  return !!(worldId && worldId !== "root" && state._vaultWorldId === worldId && vaultPayload());
+}
+
+function graphDataSignature(graphData, extra = "") {
+  if (!graphData) return `${extra}:empty`;
+  const nodes = graphData.nodes || [];
+  const edges = graphData.edges || [];
+  const meta = graphData.meta || {};
+  const labels = nodes.slice(0, 12).map(n => `${n.data?.id}:${n.data?.label}`).join("|");
+  return `${extra}:${nodes.length}:${edges.length}:${meta.updated || ""}:${meta.document_count || ""}:${labels}`;
+}
+
+function invalidateGraphCache(...ids) {
+  if (!ids.length) {
+    Object.keys(graphDrawCache).forEach(k => delete graphDrawCache[k]);
+    return;
+  }
+  ids.forEach(id => delete graphDrawCache[id]);
+}
+
+function setViewLoading(on) {
+  state._viewLoading = !!on;
+  document.querySelector(".content")?.classList.toggle("content--loading", !!on);
+}
 
 const TITLES = {
   dashboard: "Control center",
@@ -580,15 +619,17 @@ function renderAgentsCrmPanel() {
 }
 
 function renderAgentsVaultPanel() {
-  const vault = state._worldVault?.vault || state._worldVault || {};
+  const wid = currentWorldId();
+  const vault = vaultReadyFor(wid) ? (vaultPayload() || {}) : {};
   const facets = vault.folders || vault.facets || [];
   const q = state._agentsVaultQ || "";
+  const loading = wid !== "root" && !vaultReadyFor(wid);
   return `<div class="console-split">
     <section class="driver-card">
       <p class="caption-uppercase">Vault · ${esc(activeWorldLabel())}</p>
-      <div class="vault-facet-grid" style="margin-top:var(--space-xs)">${facets.map(f =>
+      ${loading ? "<p class='body-md muted' style='margin-top:var(--space-xs)'>Loading vault registry…</p>" : `<div class="vault-facet-grid" style="margin-top:var(--space-xs)">${facets.map(f =>
         `<div class="vault-facet-card"><div class="vault-facet-head"><h4>${esc(f.domain_label || f.label || f.folder || "")}</h4><span class="badge-pill">${f.file_count ?? 0} files</span></div></div>`
-      ).join("") || "<p class='muted'>Select a sub-world or link a repo in Worlds</p>"}</div>
+      ).join("") || "<p class='muted'>Select a sub-world or link a repo in Worlds</p>"}</div>`}
       <button type="button" class="button-outline-on-dark button-sm" data-goto="world" style="margin-top:var(--space-sm)">Manage vault</button>
     </section>
     <section class="driver-card">
@@ -630,12 +671,25 @@ function renderGraphOrPlaceholder(containerId, graphData, opts = {}, emptyMessag
   const nodes = graphData?.nodes || [];
   const edges = graphData?.edges || [];
   const onlyEmpty = nodes.length === 1 && nodes[0]?.data?.type === "empty";
-  const hasGraph = (nodes.length + edges.length) > 0 && !onlyEmpty;
-  const cy = hasGraph ? FOSGraph.render(containerId, graphData, opts) : null;
+  const loading = nodes.length === 1 && nodes[0]?.data?.type === "loading";
+  const hasGraph = (nodes.length + edges.length) > 0 && !onlyEmpty && !loading;
+  const sig = graphDataSignature(graphData, `${containerId}:${opts.layout?.name || "default"}:${opts.onSelect ? "interactive" : "static"}`);
+  let cy = null;
+  if (hasGraph) {
+    if (graphDrawCache[containerId] === sig && FOSGraph.getCy(containerId) && !opts.onSelect) {
+      cy = FOSGraph.getCy(containerId);
+    } else {
+      cy = FOSGraph.render(containerId, graphData, opts);
+      graphDrawCache[containerId] = sig;
+    }
+  } else {
+    FOSGraph.destroy(containerId);
+    delete graphDrawCache[containerId];
+  }
   if (!cy) {
     el.classList.add("is-empty");
     ph.hidden = false;
-    ph.textContent = emptyMessage;
+    ph.textContent = loading ? (nodes[0]?.data?.label || "Loading…") : emptyMessage;
   } else {
     el.classList.remove("is-empty");
     ph.hidden = true;
@@ -710,9 +764,44 @@ function buildVaultGraph(vault, world) {
 }
 
 function vaultGraphForWorld(world) {
-  const vault = state._worldVault?.vault || state._worldVault || {};
-  if (state._vaultGraph?.nodes?.length) return state._vaultGraph;
-  return buildVaultGraph(vault, world);
+  const wid = world?.id;
+  if (!wid || wid === "root") return { nodes: [], edges: [] };
+  if (state._vaultLoading && state._vaultWorldId !== wid) {
+    return { nodes: [{ data: { id: "vault-loading", label: "Loading vault…", type: "loading" } }], edges: [] };
+  }
+  if (state._vaultWorldId === wid && state._vaultGraph?.nodes?.length) return state._vaultGraph;
+  const vault = vaultReadyFor(wid) ? vaultPayload() : null;
+  if (vault) return buildVaultGraph(vault, world);
+  if (state._vaultLoading) {
+    return { nodes: [{ data: { id: "vault-loading", label: "Loading vault…", type: "loading" } }], edges: [] };
+  }
+  return { nodes: [{ data: { id: "vault-empty", label: "Vault not loaded", type: "empty" } }], edges: [] };
+}
+
+function worldGraphLegendHtml(tab) {
+  if (tab === "vault") {
+    return `
+      <span><i style="border-color:#051f13"></i> World</span>
+      <span><i style="border-color:#00666b"></i> Folder</span>
+      <span><i style="border-color:#8f706b;border-radius:50%"></i> File</span>
+      <span><i style="border-color:#f75440;background:#2d312e"></i> GitHub</span>`;
+  }
+  return `
+    <span><i style="border-color:#051f13"></i> Main</span>
+    <span><i style="border-color:#f75440"></i> Project</span>
+    <span><i style="border-color:#ffb4a8"></i> Idea</span>
+    <span><i style="border-color:#00666b"></i> Research</span>
+    <span><i style="border-color:#f75440;background:#f7544033"></i> Active</span>`;
+}
+
+function switchWorldGraphTab(tab) {
+  worldGraphTab = tab;
+  document.querySelectorAll("[data-world-graph-tab]").forEach(btn => {
+    btn.classList.toggle("is-active", btn.dataset.worldGraphTab === tab);
+  });
+  const legend = document.getElementById("world-graph-legend");
+  if (legend) legend.innerHTML = worldGraphLegendHtml(tab);
+  drawGraphs();
 }
 
 function drawGraphs() {
@@ -750,8 +839,7 @@ function drawGraphs() {
           onSelect: (d) => {
             if (d.facet_id) {
               state.ui = { ...(state.ui || {}), vaultFacet: d.facet_id };
-              render();
-              drawGraphs();
+              render({ graphs: false });
             }
           },
         },
@@ -778,14 +866,6 @@ function drawGraphs() {
         renderGraphOrPlaceholder("graph-world", null, {}, "World map will appear once your hierarchy is loaded.");
       }
     }
-    if (document.getElementById("graph-vault-inline")) {
-      renderGraphOrPlaceholder(
-        "graph-vault-inline",
-        vaultGraphForWorld(selected),
-        { layout: FOSGraph.HIERARCHY_LAYOUT },
-        "Add documents or link GitHub to see your file map.",
-      );
-    }
   }
   if (currentView === "memory" && state._memoryGraph) {
     renderGraphOrPlaceholder(
@@ -809,17 +889,19 @@ async function loadGraphData() {
   if (currentView === "world" || currentView === "dashboard") {
     try {
       const w = currentView === "world" ? await api("/graph/world") : state._world;
-      state._worldGraph = w?.graph || state._world?.graph;
-      state._worldHierarchyGraph = w?.hierarchy_graph || state._worldHierarchyGraph;
-      state._worldPreviews = w?.world_previews || state._worldPreviews || {};
+      state._worldGraph = w?.graph ?? null;
+      state._worldHierarchyGraph = w?.hierarchy_graph ?? null;
+      state._worldPreviews = w?.world_previews ?? {};
       if (currentView === "world") state._worldFull = w;
+      invalidateGraphCache("graph-world");
     } catch (_) {}
   }
   if (currentView === "memory") {
     try {
       const m = await api("/graph/memory");
-      state._memoryGraph = m.graph;
+      state._memoryGraph = m.graph ?? null;
       state._memoryFull = m;
+      invalidateGraphCache("graph-memory");
     } catch (_) {}
   }
 }
@@ -893,16 +975,12 @@ async function pollLive() {
     const live = await api("/live");
     patchLiveUI(live);
     if (["dashboard", "agents", "chat"].includes(currentView)) {
+      const prevSig = graphDataSignature(state._runtimeGraph, "runtime");
       state._runtimeGraph = await api("/graph/runtime").catch(() => state._runtimeGraph);
-      if (window.FOSGraph) {
-        if (currentView === "dashboard") FOSGraph.update("graph-runtime-dash", state._runtimeGraph);
-        if (currentView === "agents") {
-          const el = state.agentsTab === "live" ? "graph-runtime-agents-tab" : null;
-          if (el && document.getElementById(el)) FOSGraph.update(el, state._runtimeGraph);
-        }
-        if (currentView === "chat" && document.getElementById("graph-runtime-chat")) {
-          FOSGraph.update("graph-runtime-chat", state._runtimeGraph);
-        }
+      const nextSig = graphDataSignature(state._runtimeGraph, "runtime");
+      if (prevSig !== nextSig) {
+        invalidateGraphCache("graph-runtime-dash", "graph-runtime-agents-tab", "graph-runtime-agents", "graph-runtime-chat");
+        drawGraphs();
       }
     }
   } catch (_) { /* ignore */ }
@@ -1269,31 +1347,62 @@ function inspectorWorldId() {
 
 async function loadWorldVault(worldId) {
   if (!worldId || worldId === "root") {
-    state._worldVault = null;
-    state._vaultGraph = null;
+    clearVaultScopedState();
+    invalidateGraphCache("graph-world");
     return;
   }
+  state._vaultLoading = true;
   try {
     const res = await api(`/worlds/${encodeURIComponent(worldId)}/vault`);
     state._worldVault = res.vault || null;
     state._vaultGraph = res.vault_graph || null;
+    state._vaultWorldId = worldId;
+    invalidateGraphCache("graph-world");
   } catch (_) {
-    state._worldVault = null;
-    state._vaultGraph = null;
+    clearVaultScopedState();
+  } finally {
+    state._vaultLoading = false;
   }
 }
 
-function selectInspectorWorld(id) {
-  state.inspectorWorldId = id || "root";
-  if (currentView === "world") {
-    state._motionSkipOnce = true;
-    loadWorldVault(id).then(() => {
-      render();
-      drawGraphs();
-      FOSMotion?.flashElement?.($("#world-inspector"));
-      window.FOSGraph?.highlightWorld("graph-world", inspectorWorldId(), currentWorldId());
-    });
+async function ensureVaultForWorld(worldId) {
+  if (!worldId || worldId === "root") {
+    clearVaultScopedState();
+    return;
   }
+  if (vaultReadyFor(worldId)) return;
+  await loadWorldVault(worldId);
+}
+
+async function onWorldContextChanged(opts = {}) {
+  const activeId = currentWorldId();
+  const inspectId = inspectorWorldId();
+  const syncInspector = opts.syncInspector !== false;
+  if (currentView === "world" && syncInspector) {
+    await ensureVaultForWorld(inspectId);
+    await loadGraphData();
+  } else if (["chat", "agents"].includes(currentView)) {
+    await ensureVaultForWorld(activeId);
+  }
+  drawGraphs();
+}
+
+function selectInspectorWorld(id) {
+  const nextId = id || "root";
+  if (inspectorWorldId() === nextId && vaultReadyFor(nextId)) return;
+  state.inspectorWorldId = nextId;
+  if (currentView !== "world") return;
+  state._motionSkipOnce = true;
+  if (!state.ui) state.ui = {};
+  state.ui.vaultFacet = null;
+  clearVaultScopedState();
+  invalidateGraphCache("graph-world");
+  render({ post: false });
+  ensureVaultForWorld(nextId).then(() => {
+    render();
+    FOSMotion?.flashElement?.($("#world-inspector"));
+    window.FOSGraph?.highlightWorld("graph-world", inspectorWorldId(), currentWorldId());
+  }).catch(console.error);
 }
 
 function renderWorldTreeNav(root, children, inspectId, activeId) {
@@ -1551,7 +1660,15 @@ function renderGithubReposPanel(w, vault) {
 
 function renderWorldVaultPanel(w) {
   if (!w || w.id === "root") return "";
-  const vault = state._worldVault?.vault || state._worldVault || {};
+  if (state._vaultLoading || state._vaultWorldId !== w.id) {
+    return `
+    <section class="driver-card vault-panel knowledge-panel panel-loading" style="margin-top:var(--space-md)">
+      <p class="section-eyebrow">Knowledge vault</p>
+      <h3 class="title-sm">${esc(w.name)}</h3>
+      <p class="body-md muted">Loading vault registry for this world…</p>
+    </section>`;
+  }
+  const vault = vaultPayload() || {};
   const facets = vault.facets || vault.folders || [];
   const counts = vault.domain_counts || {};
   const activeFacet = state.ui?.vaultFacet || facets[0]?.id || facets[0]?.folder || null;
@@ -1588,7 +1705,7 @@ function renderWorldVaultPanel(w) {
         <div>
           <p class="section-eyebrow">Knowledge graph</p>
           <h3 class="title-sm">${esc(w.name)} — ${esc(vault.template_id || w.template || "startup")} template</h3>
-          <p class="body-md muted">Category slots for this world type. Add docs with a searchable description; large files live in ${esc(vaultStorageLabel())}. Use the <strong>Files</strong> tab in the map above for the full folder graph.</p>
+          <p class="body-md muted">Category slots for this world type. Add docs with a searchable description; large files live in ${esc(vaultStorageLabel())}. Open the <strong>Files</strong> tab in the map above for the folder graph.</p>
           <p class="world-meta">${vault.document_count || 0} registered docs · ${esc(vault.vault_path || "")}${vault.repo_path ? ` · repo: ${esc(vault.repo_path)}` : ""}</p>
         </div>
         <div class="vault-panel-actions">
@@ -1600,10 +1717,6 @@ function renderWorldVaultPanel(w) {
         </div>
       </div>
       ${renderGithubReposPanel(w, vault)}
-      <div class="vault-inline-graph graph-wrap">
-        <p class="caption-uppercase">File &amp; folder map</p>
-        <div id="graph-vault-inline" class="graph-canvas graph-canvas--vault" role="img" aria-label="Vault file map"></div>
-      </div>
       <div class="vault-facet-tabs" role="tablist">${facetTabs || "<span class='muted'>No categories</span>"}</div>
       ${showForm ? renderVaultDocForm(w, facets, activeFacet) : ""}
       <div class="vault-doc-grid">${docRows || "<p class='body-md muted'>No documents in this slot yet — add your ICP, GTM notes, research, etc.</p>"}</div>
@@ -1685,19 +1798,8 @@ function renderWorld() {
             </div>
           </div>
           <div id="graph-world" class="graph-canvas world-graph-canvas" role="img" aria-label="World graph"></div>
-          <div class="world-graph-legend">
-            ${worldGraphTab === "vault" ? `
-            <span><i style="border-color:#051f13"></i> World</span>
-            <span><i style="border-color:#00666b"></i> Folder</span>
-            <span><i style="border-color:#8f706b;border-radius:50%"></i> File</span>
-            <span><i style="border-color:#f75440;background:#2d312e"></i> GitHub</span>
-            ` : `
-            <span><i style="border-color:#051f13"></i> Main</span>
-            <span><i style="border-color:#f75440"></i> Project</span>
-            <span><i style="border-color:#ffb4a8"></i> Idea</span>
-            <span><i style="border-color:#00666b"></i> Research</span>
-            <span><i style="border-color:#f75440;background:#f7544033"></i> Active</span>
-            `}
+          <div class="world-graph-legend" id="world-graph-legend">
+            ${worldGraphLegendHtml(worldGraphTab)}
           </div>
         </section>
 
@@ -2195,14 +2297,8 @@ async function loadViewData(view) {
     state._crm = crm;
     state._tools = tools;
     const wid = currentWorldId();
-    if (wid && wid !== "root") {
-      const res = await api(`/worlds/${encodeURIComponent(wid)}/vault`).catch(() => ({}));
-      state._worldVault = res.vault || null;
-      state._vaultGraph = res.vault_graph || null;
-    } else {
-      state._worldVault = null;
-      state._vaultGraph = null;
-    }
+    if (wid && wid !== "root") await ensureVaultForWorld(wid);
+    else clearVaultScopedState();
   }
   if (view === "settings") {
     state._infraHealth = await api("/infrastructure/health").catch(() => state._infraHealth || null);
@@ -2210,7 +2306,10 @@ async function loadViewData(view) {
   if (view === "activity") state._activity = await api("/activity");
   if (view === "world") {
     state._worldFull = await api("/graph/world");
+    state._worldGraph = state._worldFull?.graph ?? null;
+    state._worldHierarchyGraph = state._worldFull?.hierarchy_graph ?? null;
     state._worldPreviews = state._worldFull?.world_previews || {};
+    invalidateGraphCache("graph-world");
     if (!state._worldTemplates?.length) {
       state._worldTemplates = (await api("/world-templates").catch(() => ({}))).templates || [];
     }
@@ -2221,10 +2320,14 @@ async function loadViewData(view) {
     } else {
       state._githubRepos = [];
     }
-    await loadWorldVault(inspectorWorldId());
+    await ensureVaultForWorld(inspectorWorldId());
     await resumeActiveSyncJobs(inspectorWorldId());
   }
-  if (view === "memory") state._memoryFull = await api("/graph/memory");
+  if (view === "memory") {
+    state._memoryFull = await api("/graph/memory");
+    state._memoryGraph = state._memoryFull?.graph ?? null;
+    invalidateGraphCache("graph-memory");
+  }
   if (view === "dashboard" || view === "chat" || view === "agents") {
     if (!state._agents?.specialists?.length) {
       state._agents = await api("/agents").catch(() => ({ specialists: DEFAULT_SPECIALISTS }));
@@ -2233,6 +2336,8 @@ async function loadViewData(view) {
   if (view === "chat") {
     state._activity = await api("/activity").catch(() => state._activity || {});
     state._agentRunsApi = (await api("/agents/runs").catch(() => ({}))).runs || state._agentRunsApi;
+    const wid = currentWorldId();
+    if (wid && wid !== "root") await ensureVaultForWorld(wid);
   }
   if (view === "dashboard") {
     state._world = await api("/world").catch(() => state._world || {});
@@ -2286,25 +2391,27 @@ function goView(view) {
   FOSMotion?.animateTopbarTitle?.();
   if (["dashboard", "agents", "chat", "activity", "world"].includes(view)) startLivePoll();
   else stopLivePoll();
-  render();
+  const gen = ++viewDataLoadGen;
+  setViewLoading(true);
+  render({ post: false });
   loadViewData(view).then(() => {
+    if (gen !== viewDataLoadGen) return;
+    setViewLoading(false);
     render();
-    afterRender();
-    if (state._scrollWorldCreate && view === "world") {
-      state._scrollWorldCreate = false;
-      requestAnimationFrame(() => document.getElementById("world-create-panel")?.scrollIntoView({ behavior: "smooth", block: "nearest" }));
-    }
-  }).catch(console.error);
+  }).catch((e) => {
+    console.error(e);
+    if (gen === viewDataLoadGen) setViewLoading(false);
+  });
 }
 
-function afterRender() {
+function afterRender(opts = {}) {
   try {
     if (currentView === "dashboard") drawDashboardCharts();
   } catch (e) {
     console.warn("dashboard charts skipped:", e);
   }
   try {
-    drawGraphs();
+    if (opts.graphs !== false) drawGraphs();
   } catch (e) {
     console.warn("graphs skipped:", e);
   }
@@ -2325,7 +2432,7 @@ function animateLatestChatMessage() {
   });
 }
 
-function render() {
+function render(opts = {}) {
   const el = $("#content");
   if (!el) return;
   const fns = {
@@ -2352,7 +2459,13 @@ function render() {
   populateSpecialistSelect();
   const ragEl = $("#rag-mode-select");
   if (ragEl) ragEl.value = state.ragMode || "auto";
-  afterRender();
+  if (opts.post !== false) {
+    afterRender({ graphs: opts.graphs !== false });
+    if (state._scrollWorldCreate && currentView === "world") {
+      state._scrollWorldCreate = false;
+      requestAnimationFrame(() => document.getElementById("world-create-panel")?.scrollIntoView({ behavior: "smooth", block: "nearest" }));
+    }
+  }
   if (currentView === "chat") {
     const chatEl = $("#chat-messages");
     if (chatEl) chatEl.scrollTop = chatEl.scrollHeight;
@@ -2411,11 +2524,14 @@ function initContentDelegation() {
       state.expandedRunId = state.expandedRunId === id ? null : id;
       return render();
     }
-    if (el.dataset.memoryTab) { memoryGraphTab = el.dataset.memoryTab; return render(); }
+    if (el.dataset.memoryTab) { memoryGraphTab = el.dataset.memoryTab; return render({ graphs: false }); }
     if (el.dataset.inspectWorld) return selectInspectorWorld(el.dataset.inspectWorld);
-    if (el.dataset.worldGraphTab) { worldGraphTab = el.dataset.worldGraphTab; return render(); }
+    if (el.dataset.worldGraphTab) return switchWorldGraphTab(el.dataset.worldGraphTab);
     if (el.dataset.useWorld) { setActiveWorld(el.dataset.useWorld); return goView("chat"); }
-    if (el.dataset.setActiveWorld) { setActiveWorld(el.dataset.setActiveWorld); return render(); }
+    if (el.dataset.setActiveWorld) {
+      setActiveWorld(el.dataset.setActiveWorld);
+      return onWorldContextChanged().then(() => render({ graphs: false }));
+    }
     if (el.dataset.editWorld) { state.worldEditing = el.dataset.editWorld; return render(); }
     if (el.dataset.cancelEdit !== undefined) { state.worldEditing = null; return render(); }
     if (el.dataset.deleteWorld) return deleteWorld(el.dataset.deleteWorld);
@@ -2425,7 +2541,7 @@ function initContentDelegation() {
     if (el.dataset.vaultFacet) {
       if (!state.ui) state.ui = {};
       state.ui.vaultFacet = el.dataset.vaultFacet;
-      return render();
+      return render({ graphs: false });
     }
     if (el.dataset.vaultAddDoc !== undefined) {
       if (!state.ui) state.ui = {};
@@ -3143,7 +3259,17 @@ $("#mobile-menu-close")?.addEventListener("click", () => mobileMenuDrawer?.close
 mobileMenuDrawer?.addEventListener("click", (e) => {
   if (e.target === mobileMenuDrawer) mobileMenuDrawer.close();
 });
-$("#btn-refresh")?.addEventListener("click", () => refresh().then(render));
+$("#btn-refresh")?.addEventListener("click", async () => {
+  await refresh();
+  const gen = ++viewDataLoadGen;
+  setViewLoading(true);
+  try {
+    await loadViewData(currentView);
+    if (gen === viewDataLoadGen) render();
+  } finally {
+    if (gen === viewDataLoadGen) setViewLoading(false);
+  }
+});
 window.addEventListener("resize", () => {
   if (window.innerWidth > 900) closeMobileShell();
 });
@@ -3162,9 +3288,17 @@ $("#notif-read-all")?.addEventListener("click", async () => {
   updateBadges();
 });
 
-$("#world-select")?.addEventListener("change", e => {
+$("#world-select")?.addEventListener("change", async e => {
   setActiveWorld(e.target.value);
-  if (currentView === "world" || currentView === "chat" || currentView === "agents") render();
+  if (currentView === "world") {
+    state.inspectorWorldId = e.target.value;
+    if (!state.ui) state.ui = {};
+    state.ui.vaultFacet = null;
+    clearVaultScopedState();
+    invalidateGraphCache("graph-world");
+  }
+  await onWorldContextChanged({ syncInspector: currentView === "world" });
+  render();
 });
 
 window.addEventListener("error", (e) => {
@@ -3294,10 +3428,17 @@ async function startApp() {
   }
   applyBootUrlParams();
   syncMobileNav(currentView);
-  render();
-  if (currentView === "world") {
-    loadViewData("world").then(() => { render(); afterRender(); }).catch(console.error);
-  }
+  const gen = ++viewDataLoadGen;
+  setViewLoading(true);
+  render({ post: false });
+  loadViewData(currentView).then(() => {
+    if (gen !== viewDataLoadGen) return;
+    setViewLoading(false);
+    render();
+  }).catch((e) => {
+    console.error(e);
+    if (gen === viewDataLoadGen) setViewLoading(false);
+  });
   startLivePoll();
   try {
     await loadBootExtras();
