@@ -31,5 +31,15 @@ async def generate_chart(labels, values, chart_type="bar", title=""):
         return {"error": f"Chart render failed: {e}"}
     from scheduler.jobs import send_photo_to_user
     delivered = await send_photo_to_user(path, caption=title)
+    try:
+        from memory import agent_history
+        agent_history.register_artifact(
+            kind="chart",
+            title=title or "Chart",
+            path=path,
+            mime_type="image/png",
+        )
+    except Exception:
+        pass
     return {"created": True, "path": path, "delivered": delivered,
             "note": "Chart sent to your Telegram." if delivered else f"Saved at {path}."}

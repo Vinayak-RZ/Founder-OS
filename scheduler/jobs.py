@@ -1,4 +1,5 @@
 import logging
+import os
 from datetime import datetime, timedelta
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -120,7 +121,16 @@ async def send_document_to_user(path: str, caption: str = "") -> bool:
     """Deliver a generated file to the founder on Telegram. Returns delivery success."""
     from config import config
     from dashboard import notifications
-    notifications.push("Document", caption or path, kind="media", meta={"path": path})
+    meta = {"path": path}
+    try:
+        from memory import agent_history
+        arts = agent_history.list_artifacts(limit=1)
+        if arts and arts[0].get("path") == os.path.abspath(path):
+            meta["url"] = arts[0].get("download_url")
+            meta["artifact_id"] = arts[0].get("id")
+    except Exception:
+        pass
+    notifications.push("Document", caption or path, kind="media", meta=meta)
 
     if not (_bot_app and config.telegram_enabled and config.my_telegram_user_id):
         return False

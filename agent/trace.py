@@ -81,6 +81,11 @@ def finish(final_text: str):
     if t is not None:
         rec = t.finish(final_text)
         _current.set(None)
+        try:
+            from memory import agent_history
+            agent_history.persist_run_from_trace(rec)
+        except Exception:
+            pass
         return rec
     return None
 

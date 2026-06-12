@@ -61,7 +61,46 @@ function readJsonStorage(key, fallback) {
   }
 }
 
+function chatSessionId() {
+  return localStorage.getItem("fos_chat_session") || "";
+}
+
+function setChatSessionId(id) {
+  if (id) localStorage.setItem("fos_chat_session", id);
+  else localStorage.removeItem("fos_chat_session");
+}
+
+function applyChatSessionResponse(res) {
+  if (res?.session_id) setChatSessionId(res.session_id);
+}
+
+async function loadChatFromServer() {
+  const sid = chatSessionId();
+  if (!sid) return;
+  try {
+    const detail = await api(`/history/sessions/${sid}`);
+    if (detail?.messages?.length) {
+      chatHistory = detail.messages.map(m => ({
+        role: m.role === "assistant" ? "agent" : m.role,
+        text: m.content,
+      }));
+      localStorage.setItem("fos_chat", JSON.stringify(chatHistory));
+    }
+  } catch (_) {}
+}
+
+function chatPayload(extra = {}) {
+  return {
+    world_id: currentWorldId(),
+    rag_mode: currentRagMode(),
+    session_id: chatSessionId() || undefined,
+    specialist: currentSpecialistId() || "supervisor",
+    ...extra,
+  };
+}
+
 let chatHistory = readJsonStorage("fos_chat", []);
+let historyTab = localStorage.getItem("fos_history_tab") || "conversations";
 let livePollTimer = null;
 let memoryGraphTab = "graph";
 let worldGraphTab = "hierarchy";
@@ -116,6 +155,7 @@ const TITLES = {
   crm: "CRM & pipeline",
   goals: "Goals & tasks",
   memory: "Memory",
+  history: "History",
   tools: "Tools",
   activity: "Activity",
   settings: "Settings",
@@ -2247,6 +2287,88 @@ function renderActivity() {
   </div>`;
 }
 
+function fmtHistoryTime(ts) {
+  if (!ts) return "";
+  const d = typeof ts === "number" ? new Date(ts * 1000) : new Date(ts);
+  if (Number.isNaN(d.getTime())) return String(ts).slice(0, 16);
+  return d.toLocaleString();
+}
+
+function renderHistory() {
+  const hist = state._history || {};
+  const sessions = hist.sessions || [];
+  const artifacts = state._artifacts || [];
+  const selected = state._historySession;
+  const tab = historyTab;
+  const sessionsHtml = sessions.length ? sessions.map(s => `
+    <button type="button" class="history-session${selected?.id === s.id ? " is-active" : ""}" data-history-session="${esc(s.id)}">
+      <span class="history-session__title">${esc(s.title || "Conversation")}</span>
+      <span class="history-session__meta muted">${esc(s.specialist || "supervisor")} · ${s.message_count || 0} msgs · ${fmtHistoryTime(s.updated_at)}</span>
+    </button>`).join("") : "<p class='body-md muted'>No conversations yet. Ask the agent something to start a session.</p>";
+
+  let detailHtml = "<p class='body-md muted'>Select a conversation to view messages, runs, and linked artifacts.</p>";
+  if (selected?.messages?.length) {
+    const msgs = selected.messages.map(m => `
+      <div class="history-msg history-msg--${esc(m.role)}">
+        <span class="caption-uppercase">${esc(m.role)}</span>
+        <p class="body-md">${esc(m.content)}</p>
+        <span class="muted" style="font-size:11px">${fmtHistoryTime(m.created_at)}</span>
+      </div>`).join("");
+    const runs = (selected.runs || []).map(r => `
+      <article class="history-run">
+        <div class="history-run__head">
+          <span class="mono">${esc(r.specialist || r.actor || "agent")}</span>
+          <span class="muted">${r.duration_s || 0}s</span>
+        </div>
+        ${renderLiveFlow((r.tools || []).map(t => ({ name: t.name, decision: t.decision, t: t.t })), "No tools")}
+        ${r.assistant_reply ? `<p class="world-meta">→ ${esc(r.assistant_reply)}</p>` : ""}
+      </article>`).join("") || "";
+    const arts = (selected.artifacts || []).map(a => `
+      <a class="history-artifact" href="${esc(a.download_url || `/api/artifacts/${a.id}/file`)}" target="_blank" rel="noopener">
+        <span class="badge-pill">${esc(a.kind)}</span>
+        <span>${esc(a.title)}</span>
+      </a>`).join("") || "<p class='muted'>No artifacts in this session.</p>";
+    detailHtml = `
+      <div class="history-detail__actions">
+        <button type="button" class="button-primary button-sm" data-open-chat-session="${esc(selected.id)}">Open in chat</button>
+        <button type="button" class="button-outline-on-dark button-sm" data-new-chat-session>New conversation</button>
+      </div>
+      <p class="caption-uppercase" style="margin-top:var(--space-sm)">Messages</p>
+      <div class="history-messages">${msgs}</div>
+      ${runs ? `<p class="caption-uppercase" style="margin-top:var(--space-md)">Runs</p>${runs}` : ""}
+      <p class="caption-uppercase" style="margin-top:var(--space-md)">Artifacts</p>
+      <div class="history-artifacts">${arts}</div>`;
+  }
+
+  const artifactsHtml = artifacts.length ? artifacts.map(a => `
+    <article class="history-artifact-card">
+      <div class="history-artifact-card__head">
+        <span class="badge-pill">${esc(a.kind)}</span>
+        <span class="muted">${fmtHistoryTime(a.created_at)}</span>
+      </div>
+      <h3 class="title-sm">${esc(a.title || "Untitled")}</h3>
+      ${a.run_id ? `<p class="world-meta">Run ${esc(a.run_id)}</p>` : ""}
+      <a class="button-outline-on-dark button-sm" href="${esc(a.download_url || `/api/artifacts/${a.id}/file`)}" target="_blank" rel="noopener">Download</a>
+    </article>`).join("") : "<p class='body-md muted'>No agent artifacts yet. Documents and charts created by agents appear here.</p>";
+
+  return `
+    <header class="driver-card history-header">
+      <div>
+        <p class="section-eyebrow">Agent ledger</p>
+        <h2 class="title-md">History</h2>
+        <p class="body-md muted">Persistent conversations, runs, and files created by agents.</p>
+      </div>
+    </header>
+    <div class="graph-tabs">
+      <button type="button" class="graph-tab ${tab === "conversations" ? "is-active" : ""}" data-history-tab="conversations">Conversations</button>
+      <button type="button" class="graph-tab ${tab === "artifacts" ? "is-active" : ""}" data-history-tab="artifacts">Artifacts</button>
+    </div>
+    ${tab === "conversations" ? `<div class="history-layout">
+      <section class="driver-card history-sessions">${sessionsHtml}</section>
+      <section class="driver-card history-detail">${detailHtml}</section>
+    </div>` : `<section class="driver-card history-artifacts-grid">${artifactsHtml}</section>`}`;
+}
+
 function infraKvRow(label, value, mono = false) {
   const val = value == null || value === "" ? "—" : String(value);
   return `<div class="infra-kv"><dt>${esc(label)}</dt><dd${mono ? ' class="infra-kv__val"' : ""}>${esc(val)}</dd></div>`;
@@ -2424,6 +2546,18 @@ async function loadViewData(view) {
     state._infraHealth = await api("/infrastructure/health").catch(() => state._infraHealth || null);
   }
   if (view === "activity") state._activity = await api("/activity");
+  if (view === "history") {
+    const wid = currentWorldId();
+    const q = wid && wid !== "root" ? `?world_id=${encodeURIComponent(wid)}` : "";
+    state._history = await api(`/history${q}`).catch(() => ({ sessions: [], recent_runs: [] }));
+    state._artifacts = (await api(`/artifacts${q}`).catch(() => ({ artifacts: [] }))).artifacts || [];
+    if (state._historySelectedId) {
+      state._historySession = await api(`/history/sessions/${state._historySelectedId}`).catch(() => null);
+    } else if (state._history.sessions?.[0]) {
+      state._historySelectedId = state._history.sessions[0].id;
+      state._historySession = await api(`/history/sessions/${state._historySelectedId}`).catch(() => null);
+    }
+  }
   if (view === "world") {
     state._worldFull = await api("/graph/world");
     state._worldGraph = state._worldFull?.graph ?? null;
@@ -2456,6 +2590,7 @@ async function loadViewData(view) {
   if (view === "chat") {
     state._activity = await api("/activity").catch(() => state._activity || {});
     state._agentRunsApi = (await api("/agents/runs").catch(() => ({}))).runs || state._agentRunsApi;
+    await loadChatFromServer();
     const wid = currentWorldId();
     if (wid && wid !== "root") await ensureVaultForWorld(wid);
   }
@@ -2557,7 +2692,7 @@ function render(opts = {}) {
   const fns = {
     dashboard: renderDashboard, chat: renderChat, agents: renderAgents,
     world: renderWorld, approvals: renderApprovals, crm: renderCrm, goals: renderGoals,
-    memory: renderMemory, tools: renderTools, activity: renderActivity,
+    memory: renderMemory, history: renderHistory, tools: renderTools, activity: renderActivity,
     settings: renderSettings,
   };
   try {
@@ -2573,7 +2708,7 @@ function render(opts = {}) {
     return;
   }
   document.querySelector(".content")?.classList.toggle("content--worlds", currentView === "world");
-  document.querySelector(".content")?.classList.toggle("content--wide", ["agents", "world", "activity", "chat"].includes(currentView));
+  document.querySelector(".content")?.classList.toggle("content--wide", ["agents", "world", "activity", "chat", "history"].includes(currentView));
   document.querySelector(".content")?.classList.toggle("content--chat", currentView === "chat");
   populateSpecialistSelect();
   const ragEl = $("#rag-mode-select");
@@ -2606,6 +2741,7 @@ function initContentDelegation() {
       + "[data-vault-link],[data-vault-search],[data-vault-facet],[data-vault-add-doc],"
       + "[data-vault-cancel-doc],[data-vault-edit-doc],[data-vault-delete-doc],[data-vault-reload],"
       + "[data-github-add],[data-github-sync],[data-github-unlink],[data-goal-done],"
+      + "[data-history-tab],[data-history-session],[data-open-chat-session],[data-new-chat-session],"
       + "#chat-send,#chat-clear,#memory-search,#toggle-pause,#agents-vault-search,"
       + "#delegate-selected-btn,#btn-logout,#btn-infra-refresh"
     );
@@ -2614,6 +2750,7 @@ function initContentDelegation() {
     if (el.id === "chat-clear") {
       chatHistory = [];
       localStorage.setItem("fos_chat", "[]");
+      setChatSessionId(null);
       return render();
     }
     if (el.id === "memory-search") return searchMemory();
@@ -2688,6 +2825,22 @@ function initContentDelegation() {
     if (el.dataset.githubSync) return syncGithubRepo(el.dataset.worldId, el.dataset.githubSync);
     if (el.dataset.githubUnlink) return unlinkGithubRepo(el.dataset.worldId, el.dataset.githubUnlink);
     if (el.dataset.goalDone) return markGoalDone(el.dataset.goalDone);
+    if (el.dataset.historyTab) {
+      historyTab = el.dataset.historyTab;
+      localStorage.setItem("fos_history_tab", historyTab);
+      return render();
+    }
+    if (el.dataset.historySession) return loadHistorySession(el.dataset.historySession);
+    if (el.dataset.openChatSession) {
+      setChatSessionId(el.dataset.openChatSession);
+      return loadChatFromServer().then(() => goView("chat"));
+    }
+    if (el.dataset.newChatSession) {
+      setChatSessionId(null);
+      chatHistory = [];
+      localStorage.setItem("fos_chat", "[]");
+      return goView("chat");
+    }
   });
 
   root.addEventListener("submit", e => {
@@ -3112,6 +3265,16 @@ async function agentsVaultSearch() {
   }
 }
 
+async function loadHistorySession(sessionId) {
+  state._historySelectedId = sessionId;
+  try {
+    state._historySession = await api(`/history/sessions/${sessionId}`);
+  } catch (_) {
+    state._historySession = null;
+  }
+  render();
+}
+
 async function delegateAgent() {
   const specId = currentSpecialistId();
   const ta = $("#delegate-selected");
@@ -3130,9 +3293,10 @@ async function delegateAgent() {
     if (!direct) {
       const res = await api("/chat", {
         method: "POST",
-        body: JSON.stringify({ message: task, world_id: currentWorldId(), rag_mode: currentRagMode() }),
+        body: JSON.stringify(chatPayload({ message: task })),
       });
       result = res.reply || "(no response)";
+      applyChatSessionResponse(res);
       if (res.new_approvals?.length) {
         state.approvals = res.pending_approvals;
         updateBadges();
@@ -3140,9 +3304,10 @@ async function delegateAgent() {
     } else {
       const res = await api("/agents/delegate", {
         method: "POST",
-        body: JSON.stringify({ specialist: specId, task, world_id: currentWorldId() }),
+        body: JSON.stringify(chatPayload({ specialist: specId, task })),
       });
       result = typeof res.result === "string" ? res.result : JSON.stringify(res, null, 2);
+      applyChatSessionResponse(res);
     }
     state._delegateResult = result;
     state._delegateDraft = "";
@@ -3199,9 +3364,10 @@ async function sendChat() {
     if (!direct) {
       const res = await api("/chat", {
         method: "POST",
-        body: JSON.stringify({ message: text, world_id: currentWorldId(), rag_mode: currentRagMode() }),
+        body: JSON.stringify(chatPayload({ message: text })),
       });
       chatHistory.push({ role: "agent", text: res.reply || "(no response)" });
+      applyChatSessionResponse(res);
       if (res.new_approvals?.length) {
         state.approvals = res.pending_approvals;
         updateBadges();
@@ -3209,10 +3375,11 @@ async function sendChat() {
     } else {
       const res = await api("/agents/delegate", {
         method: "POST",
-        body: JSON.stringify({ specialist: specId, task: text, world_id: currentWorldId() }),
+        body: JSON.stringify(chatPayload({ specialist: specId, task: text })),
       });
       const reply = typeof res.result === "string" ? res.result : JSON.stringify(res, null, 2);
       chatHistory.push({ role: "agent", text: reply });
+      applyChatSessionResponse(res);
       persistAgentRun({
         id: `local-chat-${Date.now()}`,
         agent: specId,
@@ -3353,12 +3520,17 @@ async function refresh() {
 
 function renderNotifications() {
   const items = state.notifications || [];
-  $("#notif-list").innerHTML = items.length ? items.map(n => `
+  $("#notif-list").innerHTML = items.length ? items.map(n => {
+    const url = n.meta?.url;
+    const link = url ? `<a class="button-outline-on-dark button-sm" href="${esc(url)}" target="_blank" rel="noopener" style="margin-top:8px;display:inline-block">Open</a>` : "";
+    return `
     <div class="notif-item ${n.read ? "" : "unread"}">
       <div class="title">${esc(n.title)}</div>
       <div class="body">${esc(n.body)}</div>
       <div class="muted" style="font-size:11px;margin-top:4px">${fmtTime(n.ts)}</div>
-    </div>`).join("") : "<p class='muted'>No notifications yet.</p>";
+      ${link}
+    </div>`;
+  }).join("") : "<p class='muted'>No notifications yet.</p>";
 }
 
 // ── Init ─────────────────────────────────────────────────────────────────────

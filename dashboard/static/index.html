@@ -14,7 +14,7 @@
   <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/static/tokens.css?v=19">
   <link rel="stylesheet" href="/static/components.css?v=19">
-  <link rel="stylesheet" href="/static/app.css?v=22">
+  <link rel="stylesheet" href="/static/app.css?v=23">
   <link rel="stylesheet" href="/static/mobile.css?v=19">
 </head>
 <body>
@@ -56,6 +56,7 @@
         <button type="button" data-view="crm" class="nav-link"><span class="nav-link__body"><span>CRM</span></span></button>
         <button type="button" data-view="goals" class="nav-link"><span class="nav-link__body"><span>Goals</span></span></button>
         <button type="button" data-view="memory" class="nav-link"><span class="nav-link__body"><span>Memory</span></span></button>
+        <button type="button" data-view="history" class="nav-link"><span class="nav-link__body"><span>History</span></span></button>
         <p class="nav-section-label">System</p>
         <button type="button" data-view="approvals" class="nav-link"><span class="nav-link__body"><span>Approvals</span></span><span class="badge-pill badge-pill--alert" id="nav-approval-badge" hidden>0</span></button>
         <button type="button" data-view="tools" class="nav-link"><span class="nav-link__body"><span>Tools</span></span></button>
@@ -158,6 +159,10 @@
         <span class="mobile-menu-link__icon" data-icon="memory"></span>
         <span>Memory</span>
       </button>
+      <button type="button" class="mobile-menu-link" data-view="history">
+        <span class="mobile-menu-link__icon" data-icon="history"></span>
+        <span>History</span>
+      </button>
       <button type="button" class="mobile-menu-link" data-view="tools">
         <span class="mobile-menu-link__icon" data-icon="tools"></span>
         <span>Tools</span>
@@ -221,7 +226,7 @@
         });
     })();
   </script>
-  <script src="/static/app.js?v=22"></script>
+  <script src="/static/app.js?v=23"></script>
   <!-- Optional enhancements (graphs + motion) — deferred so boot is never blocked -->
   <script defer src="https://cdn.jsdelivr.net/npm/gsap@3.12.7/dist/gsap.min.js"></script>
   <script defer src="https://cdn.jsdelivr.net/npm/gsap@3.12.7/dist/ScrollTrigger.min.js"></script>

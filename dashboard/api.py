@@ -108,6 +108,7 @@ def api_chat():
         return jsonify({"error": "message is required"}), 400
 
     from agent import core, store
+    from memory import agent_history
 
     before = {a["id"] for a in store.list_pending_approvals()}
 
@@ -118,6 +119,17 @@ def api_chat():
 
     world_id = (data.get("world_id") or "").strip() or None
     rag_mode = (data.get("rag_mode") or "auto").strip().lower() or "auto"
+    session_id = (data.get("session_id") or "").strip() or None
+    specialist = (data.get("specialist") or "supervisor").strip() or "supervisor"
+    title = message[:80] + ("…" if len(message) > 80 else "")
+
+    session_id = agent_history.begin_turn(
+        session_id=session_id,
+        world_id=world_id,
+        specialist=specialist,
+        title=title,
+    )
+    agent_history.add_message(session_id, "user", message)
 
     async def _go():
         live_ops.begin("user", message)
@@ -132,12 +144,19 @@ def api_chat():
     try:
         reply = _run_async(_go())
     except Exception as e:
+        agent_history.end_turn()
         logger.exception("chat failed")
         return jsonify({"error": str(e)[:500]}), 500
+
+    run_id = agent_history.current_run_id()
+    agent_history.add_message(session_id, "assistant", reply, run_id=run_id)
+    agent_history.end_turn()
 
     new_approvals = [a for a in store.list_pending_approvals() if a["id"] not in before]
     return jsonify({
         "reply": reply,
+        "session_id": session_id,
+        "run_id": run_id,
         "new_approvals": new_approvals,
         "pending_approvals": store.list_pending_approvals(),
     })
@@ -303,6 +322,59 @@ def api_activity():
     })
 
 
+@bp.route("/history")
+def api_history():
+    from memory import agent_history
+    world_id = (request.args.get("world_id") or "").strip() or None
+    limit = min(int(request.args.get("limit") or 40), 100)
+    return jsonify(_safe(lambda: agent_history.list_history(limit, world_id=world_id), {"sessions": [], "recent_runs": []}))
+
+
+@bp.route("/history/sessions/<session_id>")
+def api_history_session(session_id):
+    from memory import agent_history
+    detail = _safe(lambda: agent_history.get_session_detail(session_id), None)
+    if not detail:
+        return jsonify({"error": "session not found"}), 404
+    return jsonify(detail)
+
+
+@bp.route("/artifacts")
+def api_artifacts():
+    from memory import agent_history
+    world_id = (request.args.get("world_id") or "").strip() or None
+    session_id = (request.args.get("session_id") or "").strip() or None
+    run_id = (request.args.get("run_id") or "").strip() or None
+    limit = min(int(request.args.get("limit") or 50), 100)
+    items = _safe(
+        lambda: agent_history.list_artifacts(
+            limit, session_id=session_id, run_id=run_id, world_id=world_id,
+        ),
+        [],
+    )
+    return jsonify({"artifacts": items})
+
+
+@bp.route("/artifacts/<int:artifact_id>")
+def api_artifact_detail(artifact_id):
+    from memory import agent_history
+    art = _safe(lambda: agent_history.get_artifact(artifact_id), None)
+    if not art:
+        return jsonify({"error": "artifact not found"}), 404
+    art["download_url"] = f"/api/artifacts/{artifact_id}/file"
+    return jsonify(art)
+
+
+@bp.route("/artifacts/<int:artifact_id>/file")
+def api_artifact_file(artifact_id):
+    from memory import agent_history
+    from flask import send_file
+    path = _safe(lambda: agent_history.artifact_file_path(artifact_id), None)
+    if not path:
+        return jsonify({"error": "file not available"}), 404
+    return send_file(path, as_attachment=True, download_name=os.path.basename(path))
+
+
 @bp.route("/live")
 def api_live():
     from dashboard import live_ops
@@ -370,10 +442,21 @@ def api_delegate():
     task = (data.get("task") or "").strip()
     world_id = (data.get("world_id") or "").strip() or None
     rag_mode = (data.get("rag_mode") or "auto").strip().lower() or "auto"
+    session_id = (data.get("session_id") or "").strip() or None
     if not specialist or not task:
         return jsonify({"error": "specialist and task are required"}), 400
     from agent import subagent
     from dashboard import live_ops
+    from memory import agent_history
+
+    title = f"{specialist}: {task[:60]}" + ("…" if len(task) > 60 else "")
+    session_id = agent_history.begin_turn(
+        session_id=session_id,
+        world_id=world_id,
+        specialist=specialist,
+        title=title,
+    )
+    agent_history.add_message(session_id, "user", task)
 
     async def _on_status(text: str):
         live_ops.set_phase(text)
@@ -390,9 +473,27 @@ def api_delegate():
     try:
         result = _run_async(_go())
     except Exception as e:
+        agent_history.end_turn()
         logger.exception("delegate failed")
         return jsonify({"error": str(e)[:500]}), 500
-    return jsonify(result)
+
+    reply = ""
+    if isinstance(result, dict):
+        reply = str(result.get("result") or result.get("reply") or "")
+    else:
+        reply = str(result)
+    run_id = agent_history.current_run_id()
+    if reply:
+        agent_history.add_message(session_id, "assistant", reply, run_id=run_id)
+    agent_history.end_turn()
+
+    if isinstance(result, dict):
+        result["session_id"] = session_id
+        result["run_id"] = run_id
+        if reply and not result.get("reply"):
+            result["reply"] = reply
+        return jsonify(result)
+    return jsonify({"reply": reply, "result": reply, "session_id": session_id, "run_id": run_id})
 
 
 @bp.route("/world")

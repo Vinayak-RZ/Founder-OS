@@ -71,6 +71,19 @@ async def _deliver(path: str, caption: str) -> bool:
         return False
 
 
+def _register_file_artifact(kind: str, title: str, path: str, mime_type: str = "") -> None:
+    try:
+        from memory import agent_history
+        agent_history.register_artifact(
+            kind=kind,
+            title=title,
+            path=os.path.abspath(path),
+            mime_type=mime_type or None,
+        )
+    except Exception:
+        pass
+
+
 @register(
     name="generate_pdf",
     description="Generate a PDF document from text content (a report, brief, one-pager, "
@@ -118,6 +131,8 @@ async def generate_pdf(title: str, content: str, filename: str = None, chart: di
             os.remove(chart_path)
         except OSError:
             pass
+    mime = "application/pdf" if fmt == "pdf" else "text/plain"
+    _register_file_artifact(fmt, title, path, mime)
     delivered = await _deliver(path, caption=title[:1000])
     note = "Sent to your Telegram." if delivered else f"Saved locally at {path}."
     if fmt == "txt":
@@ -150,6 +165,8 @@ async def create_document(title: str, content: str, extension: str = "md", filen
     heading = f"# {title}\n\n" if ext == "md" else f"{title}\n{'=' * len(title)}\n\n"
     with open(path, "w", encoding="utf-8") as f:
         f.write(heading + (content or ""))
+    mime = "text/markdown" if ext == "md" else "text/plain"
+    _register_file_artifact(ext, title, path, mime)
     delivered = await _deliver(path, caption=title[:1000])
     return {"created": True, "format": ext, "path": path, "delivered": delivered,
             "note": "Sent to your Telegram." if delivered else f"Saved locally at {path}."}
