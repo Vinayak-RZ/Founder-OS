@@ -282,7 +282,7 @@ function ownerLabel() {
 }
 
 function currentWorldId() {
-  return $("#world-select")?.value || state.activeWorldId || "root";
+  return state.activeWorldId || $("#world-select")?.value || "root";
 }
 
 function activeWorldLabel() {
@@ -297,6 +297,23 @@ function setActiveWorld(id) {
   state.activeWorldId = id || "root";
   localStorage.setItem("fos_active_world", state.activeWorldId);
   populateWorldSelect();
+  updateWorldContextChrome();
+}
+
+function syncWorldSelectValue() {
+  const sel = $("#world-select");
+  if (!sel) return;
+  const id = state.activeWorldId || "root";
+  if ([...sel.options].some(o => o.value === id)) sel.value = id;
+}
+
+function updateWorldContextChrome() {
+  const label = activeWorldLabel();
+  document.querySelectorAll("[data-active-world-label]").forEach(el => {
+    el.textContent = label;
+  });
+  syncWorldSelectValue();
+  if (currentView === "world") patchWorldTreeNav();
 }
 
 function supervisorMeta(agents) {
@@ -391,9 +408,13 @@ function populateWorldSelect() {
       <option value="root">${esc(root?.name || "Main world")} — all context</option>
     </optgroup>
     ${children.length ? `<optgroup label="Sub-worlds">${childOpts}</optgroup>` : ""}`;
-  const current = currentWorldId();
+  const current = state.activeWorldId || "root";
   if ([...sel.options].some(o => o.value === current)) sel.value = current;
-  else sel.value = "root";
+  else {
+    sel.value = "root";
+    state.activeWorldId = "root";
+    localStorage.setItem("fos_active_world", "root");
+  }
 }
 
 function renderLiveFlow(events, emptyLabel = "Waiting for activity…") {
@@ -1248,7 +1269,7 @@ function renderAgents() {
         <div class="console-kpi"><span class="console-kpi__val">${pending}</span><span class="console-kpi__lbl">Approvals</span></div>
       </div>
       <div class="console-toolbar__actions">
-        <span class="badge-pill">${esc(activeWorldLabel())}</span>
+        <span class="badge-pill" data-active-world-label>${esc(activeWorldLabel())}</span>
         ${skills.map(s => `<span class="skill-chip${s.installed ? "" : " is-missing"}">${esc(s.name)}</span>`).join("")}
         <button type="button" class="button-outline-on-dark button-sm" data-goto="chat">Chat</button>
         <button type="button" class="button-outline-on-dark button-sm" data-goto="approvals"${pending ? "" : " disabled"}>Approvals${pending ? ` (${pending})` : ""}</button>
@@ -1287,7 +1308,7 @@ function renderAgents() {
         <textarea class="text-input-on-dark task-composer__input" id="delegate-selected" rows="3" placeholder="${direct ? `Task for ${esc(meta.label)}…` : "Message supervisor…"}">${esc(draft)}</textarea>
         <div class="task-composer__foot">
           <button type="button" class="button-primary" id="delegate-selected-btn">${direct ? `Run ${esc(meta.label)}` : "Send to supervisor"}</button>
-          <span class="world-meta mono">${esc(activeWorldLabel())}</span>
+          <span class="world-meta mono" data-active-world-label>${esc(activeWorldLabel())}</span>
         </div>
         ${hasResult ? `<pre class="delegate-result mono" id="delegate-result-selected">${esc(state._delegateResult || "")}</pre>` : ""}
       </section>
@@ -1410,13 +1431,13 @@ async function ensureVaultForWorld(worldId, opts = {}) {
 
 function patchWorldTreeNav() {
   const inspectId = inspectorWorldId();
-  const activeId = currentWorldId();
+  const activeId = state.activeWorldId || "root";
   $$("[data-inspect-world]").forEach(btn => {
     const id = btn.dataset.inspectWorld;
     btn.classList.toggle("is-inspect", id === inspectId);
     btn.classList.toggle("is-active", id === activeId);
   });
-  const heroActive = document.querySelector(".worlds-stat .n[style]");
+  const heroActive = document.querySelector(".worlds-stat [data-active-world-label]");
   if (heroActive) heroActive.textContent = activeWorldLabel();
 }
 
@@ -1872,7 +1893,7 @@ function renderWorld() {
           <span class="l">Sub-worlds</span>
         </div>
         <div class="worlds-stat">
-          <span class="n" style="font-size:1rem;padding-top:6px">${esc(activeWorldLabel())}</span>
+          <span class="n" data-active-world-label>${esc(activeWorldLabel())}</span>
           <span class="l">Active context</span>
         </div>
       </section>
@@ -1955,7 +1976,7 @@ function renderChat() {
         <h2 class="title-md">Ask agent</h2>
       </div>
       <div class="chat-header__meta">
-        <span class="badge-pill">${esc(activeWorldLabel())}</span>
+        <span class="badge-pill" data-active-world-label>${esc(activeWorldLabel())}</span>
         <span class="badge-pill agent-routing-badge">${esc(routeLabel)}</span>
         <button type="button" class="button-outline-on-dark button-sm" data-goto="agents">Change specialist</button>
       </div>
@@ -3395,20 +3416,29 @@ $("#notif-read-all")?.addEventListener("click", async () => {
 });
 
 $("#world-select")?.addEventListener("change", async e => {
-  const newId = e.target.value;
-  setActiveWorld(newId);
-  clearVaultScopedState();
-  invalidateGraphCache("graph-world");
-  if (currentView === "world") {
-    state.inspectorWorldId = newId;
-    if (!state.ui) state.ui = {};
-    state.ui.vaultFacet = null;
-    patchWorldPanels();
+  const sel = e.target;
+  const newId = sel.value || "root";
+  sel.disabled = true;
+  try {
+    setActiveWorld(newId);
+    clearVaultScopedState();
+    invalidateGraphCache("graph-world");
+    if (currentView === "world") {
+      state.inspectorWorldId = newId;
+      if (!state.ui) state.ui = {};
+      state.ui.vaultFacet = null;
+      patchWorldPanels();
+    }
+    await onWorldContextChanged({ vaultWorldId: newId, forceVault: true });
+    if (currentView === "world") patchWorldPanels();
+    else if (currentView === "agents" && state.agentsTab === "vault") patchAgentsVaultPanel();
+    else render({ graphs: false });
+    updateWorldContextChrome();
+  } catch (err) {
+    console.error("world switch failed:", err);
+  } finally {
+    sel.disabled = false;
   }
-  await onWorldContextChanged({ vaultWorldId: newId, forceVault: true });
-  if (currentView === "world") patchWorldPanels();
-  else if (currentView === "agents" && state.agentsTab === "vault") patchAgentsVaultPanel();
-  else render({ graphs: false });
 });
 
 window.addEventListener("error", (e) => {
