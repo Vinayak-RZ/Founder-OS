@@ -58,13 +58,24 @@ const TITLES = {
 const CHART_COLORS = ["#f75440", "#00666b", "#03904a", "#051f13", "#5a403c", "#8f706b", "#e3beb8"];
 
 async function api(path, opts = {}) {
-  const r = await fetch("/api" + path, {
-    headers: { "Content-Type": "application/json", ...opts.headers },
-    ...opts,
-  });
-  const data = await r.json().catch(() => ({}));
-  if (!r.ok) throw new Error(data.error || r.statusText);
-  return data;
+  const ctrl = new AbortController();
+  const ms = opts.timeoutMs ?? 30000;
+  const timer = setTimeout(() => ctrl.abort(), ms);
+  try {
+    const r = await fetch("/api" + path, {
+      headers: { "Content-Type": "application/json", ...opts.headers },
+      ...opts,
+      signal: opts.signal || ctrl.signal,
+    });
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(data.error || r.statusText);
+    return data;
+  } catch (e) {
+    if (e.name === "AbortError") throw new Error("Request timed out — is the server running?");
+    throw e;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 function esc(s) {
@@ -1907,26 +1918,37 @@ function updateBadges() {
   if (nb2) { nb2.textContent = unr; nb2.hidden = !unr; }
 }
 
-function updateStatus() {
+function setConnectionStatus(label, kind = "ok") {
   const dot = $("#status-dot");
   const txt = $("#status-text");
   const mobDot = $("#mobile-status-dot");
   const mobTxt = $("#mobile-status-text");
+  if (txt) txt.textContent = label;
+  if (mobTxt) mobTxt.textContent = label;
+  dot?.classList.toggle("ok", kind === "ok");
+  dot?.classList.toggle("paused", kind !== "ok");
+  mobDot?.classList.toggle("ok", kind === "ok");
+  mobDot?.classList.toggle("paused", kind !== "ok");
+}
+
+function updateStatus() {
   const c = state.config || {};
-  if (c.agent_paused) {
-    dot?.classList.add("paused"); dot?.classList.remove("ok");
-    mobDot?.classList.add("paused"); mobDot?.classList.remove("ok");
-    if (txt) txt.textContent = "Agent paused";
-    if (mobTxt) mobTxt.textContent = "Agent paused";
-  } else {
-    dot?.classList.add("ok"); dot?.classList.remove("paused");
-    mobDot?.classList.add("ok"); mobDot?.classList.remove("paused");
-    if (txt) txt.textContent = "Online";
-    if (mobTxt) mobTxt.textContent = "Online";
-  }
+  if (c.agent_paused) setConnectionStatus("Agent paused", "paused");
+  else setConnectionStatus("Online", "ok");
   const sub = $("#brand-sub");
   if (sub) sub.textContent = c.my_name || c.company_name || "Founder OS";
   document.title = c.my_name ? `Founder OS — ${c.my_name}` : "Founder OS";
+}
+
+function showBootError(err) {
+  console.error("Founder OS boot failed:", err);
+  setConnectionStatus("Offline", "paused");
+  const msg = esc(err?.message || String(err));
+  $("#content").innerHTML = `<div class="driver-card span-12">
+    <p class="title-md">Could not connect to Founder OS</p>
+    <p class="body-md muted" style="margin-top:8px">${msg}</p>
+    <p class="body-md muted" style="margin-top:12px">Make sure <code>python main.py</code> is running, then tap <strong>Refresh</strong> in the top bar.</p>
+  </div>`;
 }
 
 async function refresh() {
@@ -1935,8 +1957,12 @@ async function refresh() {
   state = { ...state, ...(await api("/state")) };
   state.activeWorldId = prevWorld || state.activeWorldId || "root";
   state.selectedSpecialist = prevSpec ?? state.selectedSpecialist ?? "";
-  populateWorldSelect();
-  populateSpecialistSelect();
+  try {
+    populateWorldSelect();
+    populateSpecialistSelect();
+  } catch (e) {
+    console.error("populate selects failed:", e);
+  }
   updateBadges();
   updateStatus();
 }
@@ -2003,17 +2029,34 @@ $("#world-select")?.addEventListener("change", e => {
 FOSMotion?.init?.();
 FOSMotion?.runShell?.();
 
-refresh().then(async () => {
-  state._agents = await api("/agents").catch(() => ({}));
-  state._world = await api("/world").catch(() => ({}));
-  populateWorldSelect();
-  populateSpecialistSelect();
-  syncMobileNav(currentView);
-  await loadGraphData();
-  render();
-  startLivePoll();
-});
+async function boot() {
+  try {
+    await refresh();
+  } catch (e) {
+    showBootError(e);
+    return;
+  }
+  try {
+    state._agents = await api("/agents").catch(() => ({}));
+    state._world = await api("/world").catch(() => ({}));
+    populateWorldSelect();
+    populateSpecialistSelect();
+    syncMobileNav(currentView);
+    await loadGraphData();
+    render();
+    startLivePoll();
+  } catch (e) {
+    console.error(e);
+    render();
+  }
+}
+
+boot();
+
 setInterval(() => refresh().then(() => {
   updateBadges();
   updateStatus();
+}).catch((e) => {
+  console.error(e);
+  setConnectionStatus("Reconnecting…", "paused");
 }), 30000);

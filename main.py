@@ -58,8 +58,8 @@ def _start_telegram():
 def main():
     logger.info(f"Starting Founder OS for {config.my_name} @ {config.company_name}")
 
-    if config.web_ui_enabled:
-        from dashboard.app import start_in_thread, run_blocking
+    if config.web_ui_enabled and config.telegram_enabled:
+        from dashboard.app import start_in_thread
         start_in_thread()
         logger.info(f"Web UI at http://127.0.0.1:{config.dashboard_port}")
 
@@ -69,11 +69,12 @@ def main():
         _start_telegram()
         return
 
-    # Web-only mode: scheduler + blocking web server
+    # Web-only mode: scheduler + single blocking web server (no duplicate bind)
     _start_scheduler_async()
-    logger.info("Running in web-only mode. Open the Web UI in your browser.")
-    from dashboard.app import run_blocking
-    run_blocking()
+    if config.web_ui_enabled:
+        logger.info("Running in web-only mode. Open the Web UI in your browser.")
+        from dashboard.app import run_blocking
+        run_blocking()
 
 
 if __name__ == "__main__":
