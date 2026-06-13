@@ -308,11 +308,85 @@ async function selectDocument(artifactId) {
   render();
 }
 
-let mdEditorState = { artifactId: null, editMode: false };
+let mdEditorState = { mode: null, artifactId: null, worldId: null, docId: null, editMode: false };
+
+function isMarkdownFilename(name) {
+  const n = (name || "").toLowerCase();
+  return n.endsWith(".md") || n.endsWith(".markdown") || n.endsWith(".rst");
+}
+
+function githubRepoDocuments(vault, fullName) {
+  const facets = vault?.facets || vault?.folders || [];
+  const docs = [];
+  for (const facet of facets) {
+    for (const doc of facet.documents || []) {
+      if (doc.github_repo === fullName) docs.push(doc);
+    }
+  }
+  return docs.sort((a, b) => (a.github_path || a.filename || "").localeCompare(b.github_path || b.filename || ""));
+}
+
+function findReadmeDoc(docs) {
+  const readmes = docs.filter(d => {
+    const path = d.github_path || d.filename || "";
+    return /^readme\.md$/i.test(path.split("/").pop() || "");
+  });
+  if (!readmes.length) return null;
+  return readmes.sort((a, b) => (a.github_path || a.filename || "").length - (b.github_path || b.filename || "").length)[0];
+}
+
+function resetMdEditorDialog() {
+  mdEditorState = { mode: null, artifactId: null, worldId: null, docId: null, editMode: false };
+  $("#md-dialog-source").hidden = true;
+  $("#md-dialog-preview").hidden = false;
+  $("#md-dialog-save").hidden = true;
+  $("#md-dialog-mode").hidden = false;
+  $("#md-dialog-mode").textContent = "Edit";
+}
+
+async function openVaultDocViewer(worldId, docId, title) {
+  const dlg = $("#md-editor-dialog");
+  if (!dlg || !worldId || !docId) return;
+  mdEditorState = { mode: "vault", artifactId: null, worldId, docId, editMode: false };
+  $("#md-dialog-title").textContent = title || "Document";
+  $("#md-dialog-preview").hidden = false;
+  $("#md-dialog-source").hidden = true;
+  $("#md-dialog-save").hidden = true;
+  $("#md-dialog-mode").hidden = false;
+  $("#md-dialog-mode").textContent = "Edit";
+  $("#md-dialog-preview").innerHTML = "<p class='body-md muted'>Loading…</p>";
+  dlg.showModal();
+  try {
+    const res = await api(`/worlds/${encodeURIComponent(worldId)}/vault/documents/${encodeURIComponent(docId)}/content`, { timeoutMs: 20000 });
+    const content = res.content || "";
+    $("#md-dialog-source").value = content;
+    const prev = $("#md-dialog-preview");
+    prev.innerHTML = window.FOSMarkdown?.render?.(content) || esc(content);
+    window.FOSMarkdown?.enhance?.(prev);
+  } catch (e) {
+    $("#md-dialog-preview").innerHTML = `<p class="body-md" style="color:var(--color-warn)">${esc(e.message || "Could not load document")}</p>`;
+  }
+}
 
 async function saveMdEditor() {
-  if (!mdEditorState.artifactId) return;
   const content = $("#md-dialog-source")?.value ?? "";
+  if (mdEditorState.mode === "vault" && mdEditorState.worldId && mdEditorState.docId) {
+    await api(`/worlds/${encodeURIComponent(mdEditorState.worldId)}/vault/documents/${encodeURIComponent(mdEditorState.docId)}`, {
+      method: "PATCH",
+      body: JSON.stringify({ content }),
+      timeoutMs: 15000,
+    });
+    const prev = $("#md-dialog-preview");
+    prev.innerHTML = window.FOSMarkdown?.render?.(content) || esc(content);
+    window.FOSMarkdown?.enhance?.(prev);
+    mdEditorState.editMode = false;
+    $("#md-dialog-source").hidden = true;
+    $("#md-dialog-preview").hidden = false;
+    $("#md-dialog-save").hidden = true;
+    $("#md-dialog-mode").textContent = "Edit";
+    return;
+  }
+  if (!mdEditorState.artifactId) return;
   await api(`/artifacts/${mdEditorState.artifactId}/content`, {
     method: "PUT",
     body: JSON.stringify({ content }),
@@ -329,8 +403,12 @@ async function saveMdEditor() {
 }
 
 function initMdEditorDialog() {
-  $("#md-dialog-close")?.addEventListener("click", () => $("#md-editor-dialog")?.close());
+  $("#md-dialog-close")?.addEventListener("click", () => {
+    $("#md-editor-dialog")?.close();
+    resetMdEditorDialog();
+  });
   $("#md-dialog-mode")?.addEventListener("click", () => {
+    if (mdEditorState.mode !== "vault" && !mdEditorState.artifactId) return;
     mdEditorState.editMode = !mdEditorState.editMode;
     const src = $("#md-dialog-source");
     const prev = $("#md-dialog-preview");
@@ -2128,18 +2206,31 @@ function renderGithubReposPanel(w, vault) {
   ).join("");
   const linkedRows = linked.map(r => {
     const syncing = isLinkSyncing(r.id);
+    const repoDocs = githubRepoDocuments(vault, r.full_name);
+    const readme = findReadmeDoc(repoDocs);
+    const mdFiles = repoDocs.filter(d => isMarkdownFilename(d.github_path || d.filename));
+    const fileItems = mdFiles.map(d => {
+      const path = d.github_path || d.filename || d.title;
+      const isReadme = /^readme\.md$/i.test((path || "").split("/").pop() || "");
+      return `<li><button type="button" class="github-repo-file-link${isReadme ? " is-readme" : ""}" data-vault-view-doc="${d.id}" data-world-id="${esc(w.id)}" data-doc-title="${esc(d.title || path)}">${esc(path)}</button></li>`;
+    }).join("");
     return `
     <div class="github-repo-row">
       <div>
         <strong class="mono">${esc(r.full_name)}</strong>
         ${syncing ? `<span class="sync-badge">Syncing</span>` : ""}
-        <span class="world-meta">${r.file_count || 0} files synced${r.synced_at ? ` · ${esc(r.synced_at)}` : ""}</span>
+        <span class="world-meta">${r.file_count || repoDocs.length || 0} files synced${r.synced_at ? ` · ${esc(r.synced_at)}` : ""}</span>
         ${r.last_error ? `<span class="world-meta" style="color:var(--color-warn)">${esc(r.last_error)}</span>` : ""}
       </div>
       <div class="github-repo-row__actions">
+        <button type="button" class="button-primary button-sm" data-vault-view-doc="${readme?.id || ""}" data-world-id="${esc(w.id)}" data-doc-title="${esc(readme?.title || `${r.full_name} README`)}"${!readme || syncing ? " disabled" : ""}>Open README</button>
         <button type="button" class="button-outline-on-dark button-sm${syncing ? " is-busy" : ""}" data-github-sync="${r.id}" data-world-id="${esc(w.id)}"${syncing ? " disabled" : ""}>${syncing ? "Syncing…" : `Sync to ${esc(vaultStorageLabel())}`}</button>
         <button type="button" class="button-tertiary-text button-sm" data-github-unlink="${r.id}" data-world-id="${esc(w.id)}"${syncing ? " disabled" : ""}>Unlink</button>
       </div>
+      ${repoDocs.length ? `<details class="github-repo-files">
+        <summary class="caption-uppercase">${mdFiles.length} markdown file${mdFiles.length === 1 ? "" : "s"} synced from this repo</summary>
+        <ul class="github-repo-file-list">${fileItems || "<li class='muted body-md'>No markdown files synced yet.</li>"}</ul>
+      </details>` : `<p class="body-md muted github-repo-files-empty">No files synced yet — link and sync to browse README and markdown files here.</p>`}
     </div>`;
   }).join("");
 
@@ -2215,18 +2306,23 @@ function renderWorldVaultPanel(w) {
     return `<button type="button" class="vault-facet-tab${id === activeFacet ? " is-active" : ""}" data-vault-facet="${esc(id)}">${esc(f.label)} <span class="badge-pill">${n}</span></button>`;
   }).join("");
 
-  const docRows = facetDocs.map(d => `
+  const docRows = facetDocs.map(d => {
+    const pathLabel = d.github_path ? ` · ${d.github_path}` : "";
+    const canView = isMarkdownFilename(d.filename || d.github_path);
+    return `
     <article class="vault-doc-card" data-doc-id="${d.id}">
       <div class="vault-doc-card__head">
         <h4>${esc(d.title)}</h4>
-        <span class="world-meta">${esc(d.filename || "")} · ${formatBytes(d.size_bytes)}${d.source_type === "github" ? " · GitHub" : ""}</span>
+        <span class="world-meta">${esc(d.filename || "")}${esc(pathLabel)} · ${formatBytes(d.size_bytes)}${d.source_type === "github" ? " · GitHub" : ""}</span>
       </div>
       <p class="body-md">${esc(d.description || "No description")}</p>
       <div class="vault-doc-card__actions">
+        ${canView ? `<button type="button" class="button-primary button-sm" data-vault-view-doc="${d.id}" data-world-id="${esc(w.id)}" data-doc-title="${esc(d.title)}">View</button>` : ""}
         <button type="button" class="button-outline-on-dark button-sm" data-vault-edit-doc="${d.id}">Edit</button>
         <button type="button" class="button-tertiary-text button-sm" data-vault-delete-doc="${d.id}">Remove</button>
       </div>
-    </article>`).join("");
+    </article>`;
+  }).join("");
 
   const diskFiles = (facets.find(f => (f.id || f.folder) === activeFacet) || {}).files || [];
   const diskList = diskFiles.length ? `<ul class="vault-file-list">${diskFiles.map(file =>
@@ -3140,7 +3236,7 @@ function initContentDelegation() {
       + "[data-inspect-world],[data-world-graph-tab],[data-use-world],[data-set-active-world],"
       + "[data-edit-world],[data-cancel-edit],[data-delete-world],[data-vault-ingest],"
       + "[data-vault-link],[data-vault-search],[data-vault-facet],[data-vault-add-doc],"
-      + "[data-vault-cancel-doc],[data-vault-edit-doc],[data-vault-delete-doc],[data-vault-reload],"
+      + "[data-vault-cancel-doc],[data-vault-edit-doc],[data-vault-delete-doc],[data-vault-view-doc],[data-vault-reload],"
       + "[data-github-add],[data-github-sync],[data-github-unlink],[data-goal-done],"
       + "[data-history-tab],[data-history-session],[data-open-chat-session],[data-new-chat-session],"
       + "[data-chat-session],[data-cancel-job],[data-cancel-active-job],[data-md-artifact],[data-open-document],"
@@ -3223,6 +3319,12 @@ function initContentDelegation() {
       return patchWorldPanels();
     }
     if (el.dataset.vaultEditDoc) return startVaultDocEdit(inspectorWorldId(), el.dataset.vaultEditDoc);
+    if (el.dataset.vaultViewDoc) {
+      const worldId = el.dataset.worldId || inspectorWorldId();
+      const docId = el.dataset.vaultViewDoc;
+      if (!docId) return;
+      return openVaultDocViewer(worldId, docId, el.dataset.docTitle || "Document");
+    }
     if (el.dataset.vaultDeleteDoc) return deleteVaultDoc(inspectorWorldId(), el.dataset.vaultDeleteDoc);
     if (el.dataset.githubAdd) return connectGithubRepo(el.dataset.githubAdd);
     if (el.dataset.githubSync) return syncGithubRepo(el.dataset.worldId, el.dataset.githubSync);
