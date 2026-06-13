@@ -205,3 +205,47 @@ def test_sync_job_endpoints(client, pin_config, monkeypatch):
         b = client.post(f"/api/sync-jobs/{job['id']}/batch", json={"batch_size": 4})
     assert b.status_code == 200
     assert b.get_json()["done"] is True
+
+
+def test_world_repo_files_endpoint(client, pin_config, monkeypatch):
+    import os
+    import tempfile
+
+    from memory import vault_documents as vd
+    from memory import world_repos as wr
+    from memory import worlds as hierarchical_worlds
+
+    with tempfile.TemporaryDirectory() as tmp:
+        os.environ["VAULT_OBJECT_ROOT"] = tmp
+        db_path = tempfile.mktemp(suffix=".db")
+        monkeypatch.setenv("FOUNDER_OS_DB", db_path)
+        os.environ.pop("AWS_S3_BUCKET", None)
+        vd.init_vault_documents_db()
+        wr.init_world_repos_db()
+        hierarchical_worlds.init_worlds_db()
+
+        world = hierarchical_worlds.create_world("API Repo World", kind="startup")
+        world_id = world["id"]
+        link = wr.add_repo(world_id, "owner/api-repo", default_branch="main")
+        vd.upsert_github_document(
+            world_id=world_id,
+            world_slug=world["slug"],
+            template_id="startup",
+            facet_id="docs",
+            title="API README",
+            description="Synced readme",
+            filename="README.md",
+            file_bytes=b"# API README\n",
+            source_ref="github:owner/api-repo:README.md",
+            github_repo="owner/api-repo",
+            github_path="README.md",
+        )
+
+        _login(client, TEST_PIN)
+        r = client.get(f"/api/worlds/{world_id}/repos/{link['id']}/files")
+        assert r.status_code == 200
+        body = r.get_json()
+        assert body["repo"]["full_name"] == "owner/api-repo"
+        assert len(body["documents"]) == 1
+        assert body["readme"]["github_path"] == "README.md"
+        assert len(body["markdown_files"]) == 1

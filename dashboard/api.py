@@ -1128,6 +1128,35 @@ def api_world_repos_list(world_id):
     return jsonify({"repos": _safe(lambda: world_repos.list_repos(world_id), [])})
 
 
+@bp.route("/worlds/<world_id>/repos/<int:link_id>/files")
+def api_world_repo_files(world_id, link_id):
+    from memory import worlds as hierarchical_worlds
+    from memory import world_repos
+    from memory.vault_documents import (
+        find_readme_document,
+        is_markdown_path,
+        list_documents_for_github_repo,
+    )
+    w = hierarchical_worlds.get(world_id)
+    if not w:
+        return jsonify({"error": "world not found"}), 404
+    link = world_repos.get_repo_link(link_id)
+    if not link or link.get("world_id") != world_id:
+        return jsonify({"error": "repo link not found"}), 404
+    docs = _safe(lambda: list_documents_for_github_repo(world_id, link["full_name"]), [])
+    readme = find_readme_document(docs)
+    markdown_files = [
+        d for d in docs
+        if is_markdown_path(d.get("github_path") or d.get("filename") or "")
+    ]
+    return jsonify({
+        "repo": link,
+        "documents": docs,
+        "readme": readme,
+        "markdown_files": markdown_files,
+    })
+
+
 @bp.route("/worlds/<world_id>/repos", methods=["POST"])
 def api_world_repos_connect(world_id):
     from integrations import github_client, github_sync

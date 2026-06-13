@@ -3349,6 +3349,53 @@ td {
   gap: var(--space-xxs);
 }
 
+.github-repo-files {
+  margin-top: var(--space-xs);
+  padding-top: var(--space-xs);
+  border-top: 1px solid var(--color-hairline);
+}
+
+.github-repo-files summary {
+  cursor: pointer;
+  color: var(--color-muted);
+  margin-bottom: var(--space-xxs);
+}
+
+.github-repo-files-empty {
+  margin: var(--space-xs) 0 0;
+}
+
+.github-repo-file-list {
+  list-style: none;
+  margin: var(--space-xxs) 0 0;
+  padding: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.github-repo-file-link {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: var(--space-xxs) var(--space-xs);
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--color-text);
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 0.82rem;
+  cursor: pointer;
+}
+
+.github-repo-file-link:hover,
+.github-repo-file-link:focus-visible {
+  border-color: var(--color-hairline);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.github-repo-file-link.is-readme {
+  color: var(--color-accent, #da291c);
+}
+
 .vault-doc-form {
   border: 1px solid var(--color-hairline);
   border-radius: var(--radius-md);

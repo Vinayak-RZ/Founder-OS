@@ -118,6 +118,36 @@ def unindex_catalog_entry(doc: dict) -> None:
         pass
 
 
+def is_markdown_path(path: str) -> bool:
+    name = (path or "").lower().rsplit("/", 1)[-1]
+    return name.endswith((".md", ".markdown", ".rst"))
+
+
+def list_documents_for_github_repo(world_id: str, github_repo: str) -> list:
+    init_vault_documents_db()
+    conn = get_conn()
+    rows = conn.execute(
+        "SELECT * FROM vault_documents WHERE world_id = ? AND github_repo = ? ORDER BY github_path, title",
+        (world_id, github_repo),
+    ).fetchall()
+    conn.close()
+    return [_row(r) for r in rows]
+
+
+def find_readme_document(docs: list) -> Optional[dict]:
+    readmes = []
+    for doc in docs:
+        path = (doc.get("github_path") or doc.get("filename") or "").strip()
+        if not path:
+            continue
+        if path.rsplit("/", 1)[-1].lower() == "readme.md":
+            readmes.append(doc)
+    if not readmes:
+        return None
+    readmes.sort(key=lambda d: len(d.get("github_path") or d.get("filename") or ""))
+    return readmes[0]
+
+
 def list_documents(world_id: str, facet_id: str | None = None) -> list:
     init_vault_documents_db()
     conn = get_conn()
